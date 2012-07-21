@@ -10,49 +10,92 @@
 ; [Path of iSCT.conf] [SSID] [WLAN / LAN] [ ON/ OFF] 
 ;"C:\Users\huynguyx\isct.conf"
 
-;checking error on the inputs
+;param initialization
 $error = ""
 $ret = "Success"
+$configFilePath = ""
+$identifier = "" ; [ xabcre]
+$interface = "" ; LAN / WLAN
+$opt = "" ; OFF / ON
+$logPath = "" ; path to store log file
+$timestamp = ""
+$logFileName = ""
+$loggingEnabled = 0
+Global $logFile = ""
+
+;create directory structure if it doesn't exist, and open file to write
+Local $logFile = FileOpen("test.txt", 10) ; which is similar to 2 + 8 (erase + create dir)
+
 
 If $CMDLINE[0] = 0 Then
    _printUsage()
    Exit(0)
 EndIf
 
-If $CMDLINE[0]<> 4 Then
-	$error = "Error: Invalid number of arguments"
+If $CMDLINE[0] = 4 Or $CMDLINE[0] = 6 Then
+Else
+   	$error = "Error: Invalid number of arguments"
+   _logErr ($error)
 EndIf
-
-_logErr ($error)
 
 If Not FileExists ($CMDLINE[1]) Then
    $error = "Error: File does not exist"
+   _logErr ($error)
+Else
+   $configFilePath = $CMDLINE[1]
 EndIf
 
-_logErr ($error)
-   
+;error checking for identifier will start in the parsing process
+$identifier = $CMDLINE[2] ; [ xabcre]
+
 If ($CMDLINE[3] = "LAN" Or $CMDLINE[3] = "WiFi" ) Then
+   $interface = $CMDLINE[3] ; LAN / WLAN
 Else
    $error = "Error: Invalid interface ( LAN / WiFi)"
+   _logErr ($error)
 EndIf
-
-_logErr ($error)
    
 If ($CMDLINE[4] = "OFF" Or $CMDLINE[4] = "ON" )  Then
+   $opt = $CMDLINE[4] ; OFF / ON
 Else
    $error = "Error: Invalid option ( OFF / ON)"
+   _logErr ($error)
 EndIf
 
-_logErr ($error)
+;if logFile is specified
+If $CMDLINE[0] = 6 Then
+   If ($CMDLINE[5] = "-s" Or $CMDLINE[5] = "-S")  Then
+   Else
+	  $error = "Error: Invalid param : " & $CMDLINE[5]
+	  _logErr ($error)
+   EndIf
+   
+   If Not FileExists ($CMDLINE[6]) Then
+	  $error = "Error: Directory to store log file not exist"
+	  _logErr ($error)
+   EndIf
 
+   $logPath = $CMDLINE[6] ; path to store log file
+   ;log file name is : Auto_AP_timestamp
+   $timestamp = @HOUR & "_" & @MIN & "_" & @SEC
+   $logFileName = $logPath & "\Auto_AP_" & $timestamp & ".txt"
+   ConsoleWrite("[Auto-AP] - Log file stored at " & $logFileName)
+   $loggingEnabled = 1
+ 
+   ;open file to write
+   ;create directory structure if it doesn't exist, and open file to write
+   $logFile = FileOpen($logFileName, 10) ; which is similar to 2 + 8 (erase + create dir)
 
-$configFilePath = $CMDLINE[1]
-$identifier = $CMDLINE[2] ; [ xabcre]
-$interface = $CMDLINE[3] ; LAN / WLAN
-$opt = $CMDLINE[4] ; OFF / ON
+   If $logFile = -1 Then
+	  $error = "Error: Cannot open file to write"
+	   _logErr ($error)
+	   Exit
+   EndIf
+   
+EndIf
+   
+_logRunningStat ("Param initialization finished")
 
-;$scriptPath = "C:\ISCT\AVE\getAP_Info.ps1"
-;$configFilePath = "C:\ISCT\AVE\iSCT.conf"
 
 
 If $interface = "WiFi" Then
@@ -145,12 +188,12 @@ If $interface = "WiFi" Then
 		 If ($opt ="OFF") And($isOnNetwork = 0) Then
 			ExitLoop
 		 EndIf
-		 _logRunningStat  ("Verifying if " & $interface & " of " & $identifier & " is turn " & $opt &". Sleeping for 10 seconds. Loop = " & $loop)
+		 _logRunningStat  ("Verifying if " & $interface & " of " & $identifier & " is turned " & $opt &". Sleeping for 10 seconds. Loop = " & $loop)
 		 $loop = $loop + 1
 		 Sleep(10000)
 	  Next	  
 	  
-	  _logRunningStat  ("Verifying if " & $interface & " of " & $identifier & " is turn " & $opt & ". Loop = " & $loop)
+	  _logRunningStat  ("Verifying if " & $interface & " of " & $identifier & " is turned " & $opt & ". Loop = " & $loop)
       If ($loop >= 20) Then	
 		 $ret = "Failed !"
 	  EndIf
@@ -414,6 +457,7 @@ BlockInput(0) ; enable user input
 _killProc('iexplore.exe')
 _logReturnStat ($ret)
 Sleep (4000)
+FileClose ($logFile)
 exit(0)
 
 ;======================================== needed routines ====================================
@@ -573,8 +617,10 @@ Func _logReturnStat ($string)
 EndFunc
 
 Func _logRunningStat ($string)
-   If $string <> "" Then 
-	  ConsoleWrite("[Auto-AP]-Running Status: " & $string & @LF )
+   If $string <> "" And $loggingEnabled = 1 Then 
+	  FileWrite ($logFile, "[ " & @Hour & ":" & @Min & ":" & @Sec & " ] " & "[Auto-AP]-Running Status: " & $string & @CRLF )
+   ElseIf $string <> "" And $loggingEnabled = 0 Then
+	  ConsoleWrite ("[Auto-AP]-Running Status: " & $string & @LF )
    EndIf
 
 EndFunc
