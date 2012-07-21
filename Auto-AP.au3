@@ -31,9 +31,9 @@ EndIf
 
 _logErr ($error)
    
-If ($CMDLINE[3] = "LAN" Or $CMDLINE[3] = "WLAN" ) Then
+If ($CMDLINE[3] = "LAN" Or $CMDLINE[3] = "WiFi" ) Then
 Else
-   $error = "Error: Invalid interface ( LAN / WLAN)"
+   $error = "Error: Invalid interface ( LAN / WiFi)"
 EndIf
 
 _logErr ($error)
@@ -55,7 +55,7 @@ $opt = $CMDLINE[4] ; OFF / ON
 ;$configFilePath = "C:\ISCT\AVE\iSCT.conf"
 
 
-If $interface = "WLAN" Then
+If $interface = "WiFi" Then
    ;Return "Not Implemented"
    
    _killProc('iexplore.exe')
@@ -103,21 +103,21 @@ If $interface = "WLAN" Then
 	  $toGet = "RF_Name"
 	  $RF_Name = _getProperty($configFilePath , $identifier, $toGet)
 	  If StringInStr( $RF_Name, "Error") Then
-		 return $RF_Name
+		 _logErr ($RF_Name)
 	  Endif
 	  
 	  ; getting the Username, return the Error if NOT FOUND
 	  $toGet = "Username"
 	  $userName = _getProperty($configFilePath , $identifier, $toGet)
 	  If StringInStr( $userName, "Error") Then
-		 return $userName
+		  _logErr ($userName)
 	  Endif
 	  
 	  ; getting the password, return the Error if NOT FOUND
 	  $toGet = "Password"
 	  $passWord = _getProperty($configFilePath , $identifier, $toGet)
 	  If StringInStr( $passWord, "Error") Then
-		 return $passWord
+		 _logErr ($passWord)
 	  Endif
 
 	  $string2 = "%%whs%%"
@@ -172,19 +172,35 @@ If $interface = "WLAN" Then
 		 $o_login = _IEFormElementGetObjByName($o_form, "login_n") ; username
 		 $o_password = _IEFormElementGetObjByName($o_form, "login_pass") ; password
 		 
-		 _IEFormElementSetValue($o_login, "admin")
-		 _IEFormElementSetValue($o_password, "intel@1234")
+		 $toGet = "Username"
+		 ; getting  user name
+		 $web_userName = _getProperty($configFilePath ,$identifier, $toGet)
+		 
+		 If StringInStr($web_userName, "Error") Then
+			 _logErr ($web_userName)
+		 Endif		 
+		 ;getting web site password
+		 $toGet = "Password"
+		 ; getting  user name
+		 $web_password = _getProperty($configFilePath ,$identifier, $toGet)
+
+		 If StringInStr($web_password, "Error") Then
+			 _logErr ($web_password)
+		 Endif
+		 
+		 _IEFormElementSetValue($o_login, $web_userName)
+		 _IEFormElementSetValue($o_password, $web_password)
 		 
 		 $oSubmit = _IEGetObjByName ($o_form, "login")
 		 _IEAction ($oSubmit, "click")
 		 _IELoadWait ($oIE)
 		 
-		 $addressWireless = "http://" & $ipAddress & ":8080/wireless_basic.asp"
+		 $addressWireless = "http://" & $ipAddress & "/wireless_basic.asp"
 		 
 		 _IENavigate($oIE, $addressWireless)
 		 
 		 _IELoadWait ($oIE)
-		 If $opt = 0 Then
+		 If $opt = "OFF" Then
 			$oForm = _IEGetObjByName ($oIE, "form1")
 			_IEFormElementRadioSelect ($oForm, 1 , "wlan0_enable", 1, "byIndex")
 			Sleep(2000)
@@ -196,6 +212,29 @@ If $interface = "WLAN" Then
 			Sleep(2000)
 			$oIE.document.parentWindow.execscript("send_request()")
 		 EndIf
+		 
+		 Sleep (30000)
+		 $loop = 1
+		 
+		 For $i = 1 To 20 Step 1
+			$isOnNetwork = _checkSSID($identifier)
+			If ($opt ="ON") And($isOnNetwork = 1) Then
+			   ExitLoop
+			EndIf
+			If ($opt ="OFF") And($isOnNetwork = 0) Then
+			   ExitLoop
+			EndIf
+			_logRunningStat  ("Verifying if " & $interface & " of " & $identifier & " is turn " & $opt &". Sleeping for 10 seconds. Loop = " & $loop)
+			$loop = $loop + 1
+			Sleep(10000)
+		 Next	  
+		 
+		 _logRunningStat  ("Verifying if " & $interface & " of " & $identifier & " is turn " & $opt & ". Loop = " & $loop)
+		 If ($loop >= 20) Then	
+			$ret = "Failed !"
+		 EndIf
+		 
+		 
 	  ElseIf $isTRENDNET = 0 Then ; This is the BELKIN
 		 $RF = $CMDLINE[3]
 		 $belkinWirelessPage = "http://192.168.1.15:8080/wireless_id.stm"
@@ -283,7 +322,7 @@ If $interface = "WLAN" Then
 			
 		 Sleep(2000)
 	
-		 EndIf  
+	  EndIf  
    EndIf
 	  
 
@@ -460,14 +499,19 @@ Func _getProperty($configFilePath , $identifier, $toGet)
    If $idIndex = 0 Then _logErr ("Error: " & $identifier & " not Found")
 	  
    Local $toGetIndex = 0
-   For $x = $idIndex To $aRecords[0]
-	  If StringInStr($aRecords[$x] , $toGet)Then
+   For $x = $idIndex + 1 To $aRecords[0]
+	  If StringRegExp ($aRecords[$x] , "\[.*.\]", 0 )Then
+		 ExitLoop
+	  EndIf
+	  If StringRegExp ($aRecords[$x] , $toGet & "=.*.", 0 )Then
 		 $toGetIndex= $x
 		 ExitLoop
-	   EndIf
-	Next
+	  EndIf
+	  
+	  
+   Next
 	
-   If $toGetIndex = 0 Then _logErr ("Error: " & $toGetIndex & " not found")
+   If $toGetIndex = 0 Then _logErr ("Error: " & $toGet & " of " & $identifier &   " not found")
 	  
    $line = $aRecords[$toGetIndex]
    $aSplit = StringSplit($line, "=")
