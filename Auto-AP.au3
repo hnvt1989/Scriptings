@@ -23,9 +23,7 @@ $logFileName = ""
 $loggingEnabled = 0
 Global $logFile = ""
 
-;create directory structure if it doesn't exist, and open file to write
-Local $logFile = FileOpen("test.txt", 10) ; which is similar to 2 + 8 (erase + create dir)
-
+_killPrevRunInstance()
 
 If $CMDLINE[0] = 0 Then
    _printUsage()
@@ -79,7 +77,7 @@ If $CMDLINE[0] = 6 Then
    ;log file name is : Auto_AP_timestamp
    $timestamp = @HOUR & "_" & @MIN & "_" & @SEC
    $logFileName = $logPath & "\Auto_AP_" & $timestamp & ".txt"
-   ConsoleWrite("[Auto-AP] - Log file stored at " & $logFileName)
+   ConsoleWrite("[Auto-AP] - Log file stored at " & $logFileName & @LF )
    $loggingEnabled = 1
  
    ;open file to write
@@ -95,8 +93,10 @@ If $CMDLINE[0] = 6 Then
 EndIf
    
 _logRunningStat ("Param initialization finished")
-
-
+_logRunningStat ("Configuration file path: " & $configFilePath)
+_logRunningStat ("Interface: " & $interface)
+_logRunningStat ("Switch: " & $opt)
+_logRunningStat ("Log file is being saved at: " & $logFileName)
 
 If $interface = "WiFi" Then
    ;Return "Not Implemented"
@@ -112,7 +112,7 @@ If $interface = "WiFi" Then
    $ipAddress = _getProperty($configFilePath ,$identifier, $toGet)
 
    If StringInStr( $ipAddress, "Error") Then
-	  return $ipAddress
+	  _logErr ($ipAddress)
    Endif
 
 
@@ -121,6 +121,7 @@ If $interface = "WiFi" Then
    ;$oIE = _IECreate($address, 0,0,1,1)
    $oIE = _IECreate()
    _IENavigate($oIE, $address)
+   _logRunningStat ("Navigating to URL address : " & $address)
    _IELoadWait ($oIE)
    
    Send("^f") ; close find window
@@ -133,6 +134,9 @@ If $interface = "WiFi" Then
    
    ;================================== if this AP is DD WRT supported (CISCO AP) =================================
    If $hasDDWRT = True Then
+	  _logRunningStat ("This AP has DD-WRT interface")
+	  _logRunningStat ("Killing any running IE instances")
+	  _killProc('iexplore.exe')
 	  ;MsgBox(0, Default, "DD-WRT")
 	  $plinkPath = "C:\ISCT\AVE\plink.exe"
 	  
@@ -162,24 +166,32 @@ If $interface = "WiFi" Then
 	  If StringInStr( $passWord, "Error") Then
 		 _logErr ($passWord)
 	  Endif
+	  
+	  _logRunningStat ("Finished parsing AP's information from iSCT.conf")
+	  _logRunningStat ("RF_Name: " & $RF_Name)
+	  _logRunningStat ("userName: " & $userName)
+	  _logRunningStat ("Password: " & $passWord)
 
 	  $string2 = "%%whs%%"
 
 	  $plinkCommand = $plinkPath & ' ' & _RTRIM($ipAddress, $string2) & ' ' & "-l" & ' ' &  _RTRIM($userName, $string2) & ' ' & "-pw" & ' ' &  _RTRIM($passWord, $string2) & ' ' & "ifconfig" & ' ' & _RTRIM($RF_Name, $string2) & ' ' & $switch
-
+	  _logRunningStat ("Constructed plink command " & $plinkCommand)
+	  _logRunningStat ("Executing this plink command")
 	  $process_id = Run($plinkCommand , @SystemDir, @SW_HIDE, $STDERR_CHILD + $STDOUT_CHILD)
 	  ;MsgBox(0, Default, $plinkCommand )
 	  ;MsgBox(0, Default, $plinkPath & ' ' & $plinkCommand  )
 
-	  ;rebooting the cisco
-	  ;If (StringInStr($identifier, "cisco") <> 0 And $opt = "on" ) Then
+	  _logRunningStat ("Re-booting the AP.......................")
 	  If ($opt = "on" ) Then
 		 $plinkCommand = $plinkPath & ' ' & _RTRIM($ipAddress, $string2) & ' ' & "-l" & ' ' &  _RTRIM($userName, $string2) & ' ' & "-pw" & ' ' &  _RTRIM($passWord, $string2) & ' ' & "reboot"
 		 $process_id_reboot = Run($plinkCommand , @SystemDir, @SW_HIDE, $STDERR_CHILD + $STDOUT_CHILD)
+		 _logRunningStat ("Sleeping for 30 seconds ")
+		 Sleep (30000)
 	  EndIf
 
 	  $loop = 1
-	  
+
+	  _logRunningStat ("Checking if the SSID is " & $opt)
 	  For $i = 1 To 20 Step 1
 		 $isOnNetwork = _checkSSID($identifier)
 		 If ($opt ="ON") And($isOnNetwork = 1) Then
@@ -202,15 +214,17 @@ If $interface = "WiFi" Then
    ;=================================== if this AP is not DD WRT supported============================
 
    If $hasDDWRT = False Then
-	
+	  _logRunningStat ("This AP does not have DD-WRT interface")
+	  _logRunningStat ("Checking if this AP is Trendnet AP")
 	  Local $sSrc = _IEDocReadHTML($oIE)
 	  sleep(2000)
 
 	  Dim $isTRENDNET = StringRegExp($sSrc, '.*TEW*', 0)
 	  ;Dim $isBELKIN = StringRegExp($sSrc, '.*TEW*', 0)
 
+	  
 	  If $isTRENDNET  = 1 Then ;this is the TRENDNET AP
-
+		 _logRunningStat ("FOUND Trendnet AP")
 		 $o_form = _IEGetObjByName ($oIE, "form1")
 		 $o_login = _IEFormElementGetObjByName($o_form, "login_n") ; username
 		 $o_password = _IEFormElementGetObjByName($o_form, "login_pass") ; password
@@ -227,9 +241,15 @@ If $interface = "WiFi" Then
 		 ; getting  user name
 		 $web_password = _getProperty($configFilePath ,$identifier, $toGet)
 
+
 		 If StringInStr($web_password, "Error") Then
 			 _logErr ($web_password)
 		 Endif
+		 
+		 _logRunningStat ("Finished parsing information from iSCT.conf")
+		 _logRunningStat ("Username : " & $web_userName)
+		 _logRunningStat ("Password : " & $web_password)
+		 _logRunningStat ("Submitting these information to the webform")
 		 
 		 _IEFormElementSetValue($o_login, $web_userName)
 		 _IEFormElementSetValue($o_password, $web_password)
@@ -240,9 +260,11 @@ If $interface = "WiFi" Then
 		 
 		 $addressWireless = "http://" & $ipAddress & "/wireless_basic.asp"
 		 
+		 _logRunningStat ("Navigating to this URL address : " & $addressWireless)		 
 		 _IENavigate($oIE, $addressWireless)
-		 
 		 _IELoadWait ($oIE)
+		 
+		 _logRunningStat ("Switching WIRELESS to : " & $opt)
 		 If $opt = "OFF" Then
 			$oForm = _IEGetObjByName ($oIE, "form1")
 			_IEFormElementRadioSelect ($oForm, 1 , "wlan0_enable", 1, "byIndex")
@@ -256,9 +278,12 @@ If $interface = "WiFi" Then
 			$oIE.document.parentWindow.execscript("send_request()")
 		 EndIf
 		 
-		 Sleep (30000)
-		 $loop = 1
+		 $sleepTime = 30000
+		 _logRunningStat ("Sleeping for " & $sleepTime & ". Waiting for the web to fully loaded")
+		 Sleep ($sleepTime)
 		 
+		 logRunningStat ("Checking if the SSID is turned " & $opt)
+		 $loop = 1
 		 For $i = 1 To 20 Step 1
 			$isOnNetwork = _checkSSID($identifier)
 			If ($opt ="ON") And($isOnNetwork = 1) Then
@@ -276,9 +301,9 @@ If $interface = "WiFi" Then
 		 If ($loop >= 20) Then	
 			$ret = "Failed !"
 		 EndIf
-		 
-		 
+			   
 	  ElseIf $isTRENDNET = 0 Then ; This is the BELKIN
+		 logRunningStat ("FOUND BELKIN AP ???????????????????????????????????????????????")
 		 $RF = $CMDLINE[3]
 		 $belkinWirelessPage = "http://192.168.1.15:8080/wireless_id.stm"
 		 _IENavigate($oIE, $belkinWirelessPage)
@@ -365,11 +390,12 @@ If $interface = "WiFi" Then
 			
 		 Sleep(2000)
 	
-	  EndIf  
+	  EndIf
+ 
+	  _logRunningStat ("Killing any running IE instances")
+	  _killProc('iexplore.exe')
    EndIf
 	  
-
-   
 ElseIf $interface = "LAN" Then
    ;pre-defined param:
    ;$opt = "on"
@@ -391,16 +417,26 @@ ElseIf $interface = "LAN" Then
    $toGet = "switchEnPw"
    $switchEnPw = _getProperty($configFilePath , $identifier, $toGet)	  
    
+   _logRunningStat ("FINISHED Parsing information from iSCT.conf")
+   _logRunningStat ("lanPort: " & $portNum )
+   _logRunningStat ("switchIP: " & $switchIP)
+   _logRunningStat ("switchPw: " & $switchPw)
+   _logRunningStat ("switchEnPw: " & $switchEnPw)
+   
    $killPutty = "C:\WINDOWS\system32\windowspowershell\v1.0\powershell.exe Stop-Process -processname putty"
 
    Sleep(2000)
+   _logRunningStat ("Killing any putty running process with this commmand: " & $killPutty )
    Run($killPutty, @SystemDir, @SW_HIDE, $STDERR_CHILD + $STDOUT_CHILD)
 
    Sleep(5000)
 
    $puttyWinTitle = $switchIP & " - " & "PuTTY"
    
+   _logRunningStat ("Telnet-ing into the switch ")
    $putty_pid =  Run("C:\ISCT\AVE\putty.exe -telnet " & $switchIP)
+   _logRunningStat ("Returned Putty PID: " & $putty_pid  )
+   _logRunningStat ("Sleeping for 5 seconds")
    Sleep(5000)
    
    $puttyWin = _GetHwndFromPID ($putty_pid)
@@ -416,6 +452,7 @@ ElseIf $interface = "LAN" Then
 	  $mode = "shut"
    EndIf
 
+   _logRunningStat ("Switching LAN Port " & $opt  )
    Sleep(1000)
    ControlSend($puttyWin, "", "", $switchPw  & @CR) ;entering password
    Sleep(1000)
@@ -448,15 +485,17 @@ ElseIf $interface = "LAN" Then
    ControlSend($puttyWin, "", "", "exit" & @CR) ; log off 
    Sleep(5000)
    
+   _logRunningStat ("Finished switching LAN port " & $opt )
 EndIf
 
 
 ;cleaning up and exit
 sleep(6000)
 BlockInput(0) ; enable user input
-_killProc('iexplore.exe')
 _logReturnStat ($ret)
+_logRunningStat ("Return Status: " & $ret)
 Sleep (4000)
+_logRunningStat ("Closing outstream to log file. END OF LOG" )
 FileClose ($logFile)
 exit(0)
 
@@ -472,20 +511,21 @@ exit(0)
 Func _printUsage()
 	ConsoleWrite("!======================     AUTO-AP Script   ====================" & @LF)
 	
-	ConsoleWrite("Usage: Auto-AP.exe [file path] [SSID] [WLAN / LAN] [ON / OFF]" & @LF)
+	ConsoleWrite("Usage: Auto-AP.exe [file path] [SSID] [WLAN / LAN] [ON / OFF] [-s <dir path to log file>]" & @LF)
 	ConsoleWrite("[file path]  :  full path to the iSCT.conf file" & @LF)
 	ConsoleWrite("[SSID]       :  the identifier of the block in the iSCT.conf" & @LF)
 	ConsoleWrite("[WLAN / LAN] :  interface to turn on/off" & @LF)
 	ConsoleWrite("[ON / OFF]   :  turn ON or OFF"  & @LF)
-	ConsoleWrite("--------------------" & @LF)
-	ConsoleWrite("i.e : Auto-AP.exe C:\ISCT\AVE\iSCT.conf PCCGCase-Cisco5 LAN OFF "  & @LF)
-	ConsoleWrite("Return: 1, on Error: exit code of 1 and the error message if the script execution encounters error: ==>  Error: ... " & @LF)
-	ConsoleWrite("        2, if Success: exit code of 0" & @LF)
+	ConsoleWrite("-s <path to directory for log file> : if this option specified, script will log to this  directory instead of stdout"  & @LF)
+	ConsoleWrite("--------------------------------------------------------------------" & @LF)
+	ConsoleWrite("i.e : Auto-AP.exe C:\ISCT\AVE\iSCT.conf PCCGCase-Cisco5 LAN OFF -s C:\ISCT\ISCT-log"  & @LF)
+	ConsoleWrite("Return: 1, on Error: print out error message if the script execution encounters error: ==>  Error: ... " & @LF)
+	ConsoleWrite("        2, if Success: print Return Status SUCCESS" & @LF)
 	ConsoleWrite("!================================================================" & @LF)
 	Exit(0)
  EndFunc
  
- 
+ ; check if this AP has DD-WRT
 Func _checkDDWRT ()
    Local $sSrc = _IEDocReadHTML($oIE)
    sleep(2000)
@@ -603,6 +643,8 @@ Func _GetHwndFromPID($PID)
 Func _logErr ($string)
    If $string <> "" Then 
 	  ConsoleWrite($string)
+	  _logRunningStat ($string)
+	  FileClose ($logFile)
 	  Exit(1)
    EndIf
 
@@ -618,11 +660,26 @@ EndFunc
 
 Func _logRunningStat ($string)
    If $string <> "" And $loggingEnabled = 1 Then 
-	  FileWrite ($logFile, "[ " & @Hour & ":" & @Min & ":" & @Sec & " ] " & "[Auto-AP]-Running Status: " & $string & @CRLF )
+	  FileWrite ($logFile, "[ " & @Hour & ":" & @Min & ":" & @Sec & " ] " & "[Auto-AP <PID:" & @AutoItPID & ">]-Running Status: " & $string & @CRLF )
    ElseIf $string <> "" And $loggingEnabled = 0 Then
 	  ConsoleWrite ("[Auto-AP]-Running Status: " & $string & @LF )
    EndIf
 
+EndFunc
+
+
+;killing previous unstopped Auto-AP
+Func _killPrevRunInstance()
+   ; List just notepad.exe processes
+   $list = ProcessList("Auto-AP.exe")
+   For $i = 1 To $list[0][0]
+	   $pid = $list[$i][1]
+	   If $pid <> @AutoItPID Then
+		  $killPrev = "C:\WINDOWS\system32\windowspowershell\v1.0\powershell.exe Stop-Process -id " & $pid
+		  ConsoleWrite ("Killing Auto-AP with pid " & $pid @LF )
+		  Run($killPrev , @SystemDir, @SW_HIDE, $STDERR_CHILD + $STDOUT_CHILD)		  
+	   EndIf
+   Next
 EndFunc
 
 Func _cleanUp()
