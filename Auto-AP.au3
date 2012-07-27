@@ -60,19 +60,29 @@ Else
    _logErr ($error)
 EndIf
 
+;check if debug logging is enabled
+
 ;if logFile is specified
-If $CMDLINE[0] = 6 Then
-   If ($CMDLINE[5] = "-s" Or $CMDLINE[5] = "-S")  Then
+If $CMDLINE[0] = 6  Then
+   
+   If $CMDLINE[5] = "-s" Or $CMDLINE[5] = "-S" Then
    Else
 	  $error = "Error: Invalid param : " & $CMDLINE[5]
 	  _logErr ($error)
    EndIf
    
-   If Not FileExists ($CMDLINE[6]) Then
-	  $error = "Error: Directory to store log file not exist"
-	  _logErr ($error)
+   $logPath = ""
+   If $loggingEnabled = 1 Then
+	  $logPath = "C:\ISCT\ISCT-log"
    EndIf
-
+   
+   If Not FileExists ($CMDLINE[6]) and $logPath = "" Then
+	  If Not FileExists($logPath) Then
+		 $error = "Error: Directory to store log file not exist"
+	  _logErr ($error)
+	  EndIf
+   EndIf
+   
    $logPath = $CMDLINE[6] ; path to store log file
    ;log file name is : Auto_AP_timestamp
    $timestamp = @HOUR & "_" & @MIN & "_" & @SEC
@@ -89,7 +99,29 @@ If $CMDLINE[0] = 6 Then
 	   _logErr ($error)
 	   Exit
    EndIf
-   
+EndIf
+
+$loggingEnabled  = _checkDebugEnabled($configFilePath)
+ConsoleWrite("logging enabled " & $loggingEnabled)
+;if -s flag not specified and the loggingEnabled is 1 (parsed from configuration file)
+If $loggingEnabled = 1 And $logFileName = "" Then
+   $logPath = "C:\ISCT\ISCT-Log" ; path to store log file
+   ;log file name is : Auto_AP_timestamp
+   $timestamp = @HOUR & "_" & @MIN & "_" & @SEC
+   $logFileName = $logPath & "\Auto_AP_" & $timestamp & ".txt"
+   ConsoleWrite("[Auto-AP] - -s Flag not specified, but Auto_AP_Debug is set to 1, in iSCT.conf "& @LF )
+   ConsoleWrite("[Auto-AP] - Log file stored at " & $logFileName & @LF )
+   $loggingEnabled = 1
+ 
+   ;open file to write
+   ;create directory structure if it doesn't exist, and open file to write
+   $logFile = FileOpen($logFileName, 10) ; which is similar to 2 + 8 (erase + create dir)
+
+   If $logFile = -1 Then
+	  $error = "Error: Cannot open file to write"
+	   _logErr ($error)
+	   Exit
+   EndIf  
 EndIf
    
 _logRunningStat ("Param initialization finished")
@@ -102,8 +134,10 @@ If $interface = "WiFi" Then
    ;Return "Not Implemented"
    
    _killProc('iexplore.exe')
-
-   sleep(1000)
+   _logRunningStat ("Clearing the IE cache")
+   Run("RunDll32.exe InetCpl.cpl,ClearMyTracksByProcess " & 255) ; clear the cache
+   _logRunningStat ("Sleeping for 20 seconds")
+   sleep(20000)
    ; Create a browser window and navigate to  login page
 
    $toGet = "AP_IP"
@@ -176,6 +210,10 @@ If $interface = "WiFi" Then
 
 	  $plinkCommand = $plinkPath & ' ' & _RTRIM($ipAddress, $string2) & ' ' & "-l" & ' ' &  _RTRIM($userName, $string2) & ' ' & "-pw" & ' ' &  _RTRIM($passWord, $string2) & ' ' & "ifconfig" & ' ' & _RTRIM($RF_Name, $string2) & ' ' & $switch
 	  _logRunningStat ("Constructed plink command " & $plinkCommand)
+	  _logRunningStat ("Adding AP IP address to the putty cache.......... ")
+	  _addPuttyCache($ipAddress, $userName, $passWord)
+	  ;_addPuttyCache(_RTRIM($ipAddress, $string2), _RTRIM($userName, $string2), _RTRIM($passWord, $string2))
+	  Sleep (2000)
 	  _logRunningStat ("Executing this plink command")
 	  $process_id = Run($plinkCommand , @SystemDir, @SW_HIDE, $STDERR_CHILD + $STDOUT_CHILD)
 	  ;MsgBox(0, Default, $plinkCommand )
@@ -282,7 +320,7 @@ If $interface = "WiFi" Then
 		 _logRunningStat ("Sleeping for " & $sleepTime & ". Waiting for the web to fully loaded")
 		 Sleep ($sleepTime)
 		 
-		 logRunningStat ("Checking if the SSID is turned " & $opt)
+		 _logRunningStat ("Checking if the SSID is turned " & $opt)
 		 $loop = 1
 		 For $i = 1 To 20 Step 1
 			$isOnNetwork = _checkSSID($identifier)
@@ -423,6 +461,7 @@ ElseIf $interface = "LAN" Then
    _logRunningStat ("switchPw: " & $switchPw)
    _logRunningStat ("switchEnPw: " & $switchEnPw)
    
+   
    $killPutty = "C:\WINDOWS\system32\windowspowershell\v1.0\powershell.exe Stop-Process -processname putty"
 
    Sleep(2000)
@@ -434,6 +473,7 @@ ElseIf $interface = "LAN" Then
    $puttyWinTitle = $switchIP & " - " & "PuTTY"
    
    _logRunningStat ("Telnet-ing into the switch ")
+   _logRunningStat ("Adding switch IP into the putty cache .....")
    $putty_pid =  Run("C:\ISCT\AVE\putty.exe -telnet " & $switchIP)
    _logRunningStat ("Returned Putty PID: " & $putty_pid  )
    _logRunningStat ("Sleeping for 5 seconds")
@@ -495,7 +535,6 @@ BlockInput(0) ; enable user input
 _logReturnStat ($ret)
 _logRunningStat ("Return Status: " & $ret)
 Sleep (4000)
-_logRunningStat ("Closing outstream to log file. END OF LOG" )
 FileClose ($logFile)
 exit(0)
 
@@ -563,6 +602,25 @@ Func _hasNetwork($ip)
    Return StringRegExp ( $result, "TTL")
 EndFunc
 
+;check in the configuration file if DebugEnabled is specified
+Func _checkDebugEnabled($configFilePath)
+   Local $aRecords
+   If Not _FileReadToArray($configFilePath, $aRecords) Then
+	   _logErr ("Error reading config file: " & @error )
+   EndIf
+	
+   $aSplit = "";
+   For $x = 1 To $aRecords[0]
+	  If StringRegExp ($aRecords[$x] , "Auto_AP_Debug", 0 )Then
+		 $aSplit = StringSplit($aRecords[$x], "=")
+		 ExitLoop
+	  EndIf
+   Next
+	
+   return $aSplit[2]
+EndFunc
+
+
 ; parse the conf file and get a specific item of the identified subject 
 Func _getProperty($configFilePath , $identifier, $toGet)
    
@@ -570,6 +628,7 @@ Func _getProperty($configFilePath , $identifier, $toGet)
    If Not _FileReadToArray($configFilePath, $aRecords) Then
 	   _logErr ("Error reading config file: " & @error )
    EndIf
+
 
    Local $idIndex = 0
 
@@ -676,10 +735,17 @@ Func _killPrevRunInstance()
 	   $pid = $list[$i][1]
 	   If $pid <> @AutoItPID Then
 		  $killPrev = "C:\WINDOWS\system32\windowspowershell\v1.0\powershell.exe Stop-Process -id " & $pid
-		  ConsoleWrite ("Killing Auto-AP with pid " & $pid @LF )
+		  ConsoleWrite ("Killing Auto-AP with pid " & $pid & @LF )
 		  Run($killPrev , @SystemDir, @SW_HIDE, $STDERR_CHILD + $STDOUT_CHILD)		  
 	   EndIf
    Next
+EndFunc
+
+;adding the ip address to the putty cache
+Func _addPuttyCache($ipAdress, $id, $pw)
+   $plinkPath = "C:\ISCT\AVE\plink.exe"
+   $cmd = "echo y | " & $plinkPath & " " & $ipAdress & " -l " & $id & " -pw " & $pw
+   RunWait(@ComSpec & " /C " & $cmd, "", @SW_HIDE);   
 EndFunc
 
 Func _cleanUp()
