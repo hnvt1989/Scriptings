@@ -134,7 +134,7 @@ _logRunningStat ("Log file is being saved at: " & $logFileName)
 If $interface = "WiFi" Then
    ;Return "Not Implemented"
    
-   _killProc('iexplore.exe')
+   ;_killProc('iexplore.exe')
    _logRunningStat ("Clearing the IE cache")
    Run("RunDll32.exe InetCpl.cpl,ClearMyTracksByProcess " & 255) ; clear the cache
    _logRunningStat ("Sleeping for 20 seconds")
@@ -158,12 +158,36 @@ If $interface = "WiFi" Then
    _IENavigate($oIE, $address)
    _logRunningStat ("Navigating to URL address : " & $address)
    _IELoadWait ($oIE)
+   If @error <> 0 Then 
+		 _logErr(@error)
+   Endif  
+	  
    
-   If @error Then MsgBox(16, "Failure", "blah.")
-   Send("^f") ; close find window
-   Send("{BS}")
-   Send("{ESC}")
-
+   ;getting VM info
+   _logRunningStat ("Getting VM host ip address")
+   $toGet = "VM_Host_IP"
+   ; getting the VM ip address
+   $VM_Ip = _getProperty($configFilePath ,$identifier, $toGet)
+   _logRunningStat ("VM ip address: " & $VM_Ip)
+   
+   If ($VM_Ip <> "NA") Then
+	  _logRunningStat ("Getting VM host user name")
+	  $toGet = "VM_Host_Username"
+	  ; getting the VM ip address
+	  $VM_Host_User = _getProperty($configFilePath ,$identifier, $toGet)
+	  _logRunningStat ("VM Host Username : " & $VM_Host_User )
+	  
+	  _logRunningStat ("Getting VM host password")
+	  $toGet = "VM_Host_Password"
+	  ; getting the VM ip address
+	  $VM_Host_Password = _getProperty($configFilePath ,$identifier, $toGet)
+	  _logRunningStat ("VM Host password : " & $VM_Host_Password )
+   Else
+	  _logRunningStat ("This is host machine")
+   EndIf
+   
+   
+   
    $hasDDWRT = 1
    _checkDDWRT()
    ;MsgBox(0, Default, $hasDDWRT)
@@ -258,13 +282,16 @@ If $interface = "WiFi" Then
 	  _logRunningStat ("Checking if this AP is Trendnet AP")
 	  Local $sSrc = _IEDocReadHTML($oIE)
 	  sleep(2000)
+	  If @error = 3 Then 
+		 _logErr("Invalid Data Type")
+	  Endif
 
 	  Dim $isTRENDNET = StringRegExp($sSrc, '.*TEW*', 0)
 	  ;Dim $isBELKIN = StringRegExp($sSrc, '.*TEW*', 0)
 
 	  
 	  If $isTRENDNET  = 1 Then ;this is the TRENDNET AP
-		 _logRunningStat ("FOUND Trendnet AP")
+		 _logRunningStat  ("FOUND Trendnet AP")
 		 $o_form = _IEGetObjByName ($oIE, "form1")
 		 $o_login = _IEFormElementGetObjByName($o_form, "login_n") ; username
 		 $o_password = _IEFormElementGetObjByName($o_form, "login_pass") ; password
@@ -328,6 +355,7 @@ If $interface = "WiFi" Then
 			$oIE.document.parentWindow.execscript("send_request()")
 		 EndIf
 		 
+		  ;_IELoadWait ($oIE)
 		 $sleepTime = 30000
 		 _logRunningStat ("Sleeping for " & $sleepTime & ". Waiting for the web to fully loaded")
 		 Sleep ($sleepTime)
@@ -584,15 +612,32 @@ EndFunc
 ;#include <constants.au3>
 ;return 1 if the SSID is on, 0 if the SSID is off
 Func _checkSSID($SSID)
-   Local $foo = Run("netsh wlan show networks", @SystemDir, @SW_HIDE, $STDERR_CHILD + $STDOUT_CHILD)
+   ;findstr "identifier"
+   Local $foo = ""
+   If IsDeclared("VM_Ip") Then
+	  If ($VM_Ip  = "NA") Then
+		 _logRunningStat ("Running netsh on local machine")
+		 $foo = Run(" netsh wlan show networks", @SystemDir, @SW_HIDE, $STDERR_CHILD + $STDOUT_CHILD)
+	  Else
+		 If IsDeclared("VM_Host_User") And IsDeclared("VM_Host_Password") Then
+			_logRunningStat ("Running netsh on local host")
+			$foo = Run("C:\ISCT\AVE\psexec.exe \\" & $VM_Ip & " -u " & $VM_Host_User & " -p " & $VM_Host_Password & " netsh.exe wlan show networks | findstr " & $SSID, @SystemDir, @SW_HIDE, $STDERR_CHILD + $STDOUT_CHILD)
+		 EndIf
+		 
+	  EndIf
+   Endif
+   
+   
+   
    $result = ""
    While 1
 	   $line = StdoutRead($foo)
 	   If @error Then ExitLoop
 	   $result &= $line
 	Wend
+   _logRunningStat ("Result : " & $result)
    Return StringRegExp ( $result, $SSID)
-  
+   
 EndFunc 
 
 ;check if the network has connection by pinging the IP
@@ -707,11 +752,14 @@ Func _GetHwndFromPID($PID)
 Func _logErr ($string)
    If $string <> "" Then 
 	  _logRunningStat ("Killing any running IE instances")
-	  _killProc('iexplore.exe')
+	  ;_killProc('iexplore.exe')
+	  If IsDeclared("oIE") Then
+		 _IEQuit($oIE)
+		 _logRunningStat ("[Cleaning up] Clearing the IE cache")
+		 Run("RunDll32.exe InetCpl.cpl,ClearMyTracksByProcess " & 255) ; clear the cache
+	  EndIf
 	  sleep(6000)
 	  BlockInput(0) ; enable user input
-	  _logRunningStat ("[Cleaning up] Clearing the IE cache")
-	  Run("RunDll32.exe InetCpl.cpl,ClearMyTracksByProcess " & 255) ; clear the cache
 	  Sleep (4000)
 	  If ($logFileName  <> "") Then
 		 FileClose ($logFile)
@@ -765,13 +813,16 @@ EndFunc
 
 Func _cleanUp()
    _logRunningStat ("Killing any running IE instances")
-   _killProc('iexplore.exe')
+   If IsDeclared("oIE") Then
+	  _IEQuit($oIE)
+	  _logRunningStat ("[Cleaning up] Clearing the IE cache")
+	  Run("RunDll32.exe InetCpl.cpl,ClearMyTracksByProcess " & 255) ; clear the cache
+   EndIf
+   ;_killProc('iexplore.exe')
    sleep(6000)
    BlockInput(0) ; enable user input
    _logReturnStat ($ret)
    _logRunningStat ("Return Status: " & $ret)
-   _logRunningStat ("[Cleaning up] Clearing the IE cache")
-   Run("RunDll32.exe InetCpl.cpl,ClearMyTracksByProcess " & 255) ; clear the cache
    Sleep (4000)
    FileClose ($logFile)
    exit(0)
