@@ -102,15 +102,16 @@ If $CMDLINE[0] = 6  Then
 EndIf
 
 $loggingEnabled  = _checkDebugEnabled($configFilePath)
-ConsoleWrite("logging enabled " & $loggingEnabled)
+_logRunningStat ("Logging Enabled = " & $loggingEnabled)
+
 ;if -s flag not specified and the loggingEnabled is 1 (parsed from configuration file)
 If $loggingEnabled = 1 And $logFileName = "" Then
    $logPath = "C:\ISCT\ISCT-Log" ; path to store log file
    ;log file name is : Auto_AP_timestamp
    $timestamp = @HOUR & "_" & @MIN & "_" & @SEC
    $logFileName = $logPath & "\Auto_AP_" & $timestamp & ".txt"
-   ConsoleWrite("[Auto-AP] - -s Flag not specified, but Auto_AP_Debug is set to 1, in iSCT.conf "& @LF )
-   ConsoleWrite("[Auto-AP] - Log file stored at " & $logFileName & @LF )
+   ;ConsoleWrite("[Auto-AP] - -s Flag not specified, but Auto_AP_Debug is set to 1, in iSCT.conf "& @LF )
+   ;ConsoleWrite("[Auto-AP] - Log file stored at " & $logFileName & @LF )
    $loggingEnabled = 1
  
    ;open file to write
@@ -158,6 +159,7 @@ If $interface = "WiFi" Then
    _logRunningStat ("Navigating to URL address : " & $address)
    _IELoadWait ($oIE)
    
+   If @error Then MsgBox(16, "Failure", "blah.")
    Send("^f") ; close find window
    Send("{BS}")
    Send("{ESC}")
@@ -296,6 +298,16 @@ If $interface = "WiFi" Then
 		 _IEAction ($oSubmit, "click")
 		 _IELoadWait ($oIE)
 		 
+		 ;check if the entered username and password are incorrect
+		 Local $sSrc = _IEDocReadHTML($oIE)
+		 sleep(2000)
+
+		 Dim $isCorrectLogin = StringRegExp($sSrc, '.*User.Name.or.Password.incorrect*', 0)
+		 
+		 If $isCorrectLogin = 1 Then
+			_logErr ("User name or password entered to the form is incorrect")
+		 Endif
+		 
 		 $addressWireless = "http://" & $ipAddress & "/wireless_basic.asp"
 		 
 		 _logRunningStat ("Navigating to this URL address : " & $addressWireless)		 
@@ -429,9 +441,7 @@ If $interface = "WiFi" Then
 		 Sleep(2000)
 	
 	  EndIf
- 
-	  _logRunningStat ("Killing any running IE instances")
-	  _killProc('iexplore.exe')
+
    EndIf
 	  
 ElseIf $interface = "LAN" Then
@@ -529,14 +539,9 @@ ElseIf $interface = "LAN" Then
 EndIf
 
 
+_cleanUp()
 ;cleaning up and exit
-sleep(6000)
-BlockInput(0) ; enable user input
-_logReturnStat ($ret)
-_logRunningStat ("Return Status: " & $ret)
-Sleep (4000)
-FileClose ($logFile)
-exit(0)
+
 
 ;======================================== needed routines ====================================
 
@@ -550,7 +555,7 @@ exit(0)
 Func _printUsage()
 	ConsoleWrite("!======================     AUTO-AP Script   ====================" & @LF)
 	
-	ConsoleWrite("Usage: Auto-AP.exe [file path] [SSID] [WLAN / LAN] [ON / OFF] [-s <dir path to log file>]" & @LF)
+	ConsoleWrite("Usage: Auto-AP.exe <file path> <SSID> <WLAN / LAN> <ON / OFF> <-s <dir path to log file>>" & @LF)
 	ConsoleWrite("[file path]  :  full path to the iSCT.conf file" & @LF)
 	ConsoleWrite("[SSID]       :  the identifier of the block in the iSCT.conf" & @LF)
 	ConsoleWrite("[WLAN / LAN] :  interface to turn on/off" & @LF)
@@ -701,12 +706,22 @@ Func _GetHwndFromPID($PID)
 ;output the error and exit
 Func _logErr ($string)
    If $string <> "" Then 
-	  ConsoleWrite($string)
-	  _logRunningStat ($string)
-	  FileClose ($logFile)
-	  Exit(1)
-   EndIf
+	  _logRunningStat ("Killing any running IE instances")
+	  _killProc('iexplore.exe')
+	  sleep(6000)
+	  BlockInput(0) ; enable user input
+	  _logRunningStat ("[Cleaning up] Clearing the IE cache")
+	  Run("RunDll32.exe InetCpl.cpl,ClearMyTracksByProcess " & 255) ; clear the cache
+	  Sleep (4000)
+	  If ($logFileName  <> "") Then
+		 FileClose ($logFile)
+	  EndIf
 
+	  $ret = "Failed"
+	  _logReturnStat ($ret & " - Failed Reason : " & $string)
+	  _logRunningStat ($ret & " - Failed Reason : " & $string)
+	  exit(0)
+   EndIf
 EndFunc
 
 ;output the error and exit
@@ -749,5 +764,15 @@ Func _addPuttyCache($ipAdress, $id, $pw)
 EndFunc
 
 Func _cleanUp()
-   
+   _logRunningStat ("Killing any running IE instances")
+   _killProc('iexplore.exe')
+   sleep(6000)
+   BlockInput(0) ; enable user input
+   _logReturnStat ($ret)
+   _logRunningStat ("Return Status: " & $ret)
+   _logRunningStat ("[Cleaning up] Clearing the IE cache")
+   Run("RunDll32.exe InetCpl.cpl,ClearMyTracksByProcess " & 255) ; clear the cache
+   Sleep (4000)
+   FileClose ($logFile)
+   exit(0)
 EndFunc
