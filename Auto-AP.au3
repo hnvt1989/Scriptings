@@ -132,6 +132,46 @@ _logRunningStat ("Switch: " & $opt)
 _logRunningStat ("Log file is being saved at: " & $logFileName)
 
 If $interface = "WiFi" Then
+   
+   ;getting VM info
+   _logRunningStat ("Getting VM host ip address")
+   $toGet = "VM_Host_IP"
+   ; getting the VM ip address
+   $VM_Ip = _getProperty($configFilePath ,$identifier, $toGet)
+   _logRunningStat ("VM ip address: " & $VM_Ip)
+   
+   If ($VM_Ip <> "NA") Then
+	  _logRunningStat ("Getting VM host user name")
+	  $toGet = "VM_Host_Username"
+	  ; getting the VM ip address
+	  $VM_Host_User = _getProperty($configFilePath ,$identifier, $toGet)
+	  _logRunningStat ("VM Host Username : " & $VM_Host_User )
+	  
+	  _logRunningStat ("Getting VM host password")
+	  $toGet = "VM_Host_Password"
+	  ; getting the VM ip address
+	  $VM_Host_Password = _getProperty($configFilePath ,$identifier, $toGet)
+	  _logRunningStat ("VM Host password : " & $VM_Host_Password )
+   Else
+	  _logRunningStat ("This is host machine")
+   EndIf
+   
+   
+   $check =   _checkSSID($identifier) ;check if the SSID is already ON or OFF
+   $switch = 1
+   If $opt = "on" Then
+	  If $check = 1 Then
+		 _logRunningStat("SSID is already ON. Script is exitting")
+		 _cleanUp()
+	  EndIf
+	  $switch = "up"
+   ElseIf $opt = "off" Then
+	  If $check = 0 Then
+		 _logRunningStat("SSID is already OFF. Script is exitting")
+		 _cleanUp()
+	  EndIf		 
+	  $switch = "down"
+   EndIf
    ;Return "Not Implemented"
    
    ;_killProc('iexplore.exe')
@@ -161,32 +201,6 @@ If $interface = "WiFi" Then
    If @error <> 0 Then 
 		 _logErr(@error)
    Endif  
-	  
-   
-   ;getting VM info
-   _logRunningStat ("Getting VM host ip address")
-   $toGet = "VM_Host_IP"
-   ; getting the VM ip address
-   $VM_Ip = _getProperty($configFilePath ,$identifier, $toGet)
-   _logRunningStat ("VM ip address: " & $VM_Ip)
-   
-   If ($VM_Ip <> "NA") Then
-	  _logRunningStat ("Getting VM host user name")
-	  $toGet = "VM_Host_Username"
-	  ; getting the VM ip address
-	  $VM_Host_User = _getProperty($configFilePath ,$identifier, $toGet)
-	  _logRunningStat ("VM Host Username : " & $VM_Host_User )
-	  
-	  _logRunningStat ("Getting VM host password")
-	  $toGet = "VM_Host_Password"
-	  ; getting the VM ip address
-	  $VM_Host_Password = _getProperty($configFilePath ,$identifier, $toGet)
-	  _logRunningStat ("VM Host password : " & $VM_Host_Password )
-   Else
-	  _logRunningStat ("This is host machine")
-   EndIf
-   
-   
    
    $hasDDWRT = 1
    _checkDDWRT()
@@ -200,12 +214,6 @@ If $interface = "WiFi" Then
 	  ;MsgBox(0, Default, "DD-WRT")
 	  $plinkPath = "C:\ISCT\AVE\plink.exe"
 	  
-	  $switch = 1
-	  If $opt = "on" Then
-		 $switch = "up"
-	  ElseIf $opt = "off" Then
-		 $switch = "down"
-	  EndIf
 	  ; getting the RF_Name , return the Error if NOT FOUND
 	  $toGet = "RF_Name"
 	  $RF_Name = _getProperty($configFilePath , $identifier, $toGet)
@@ -278,6 +286,9 @@ If $interface = "WiFi" Then
    ;=================================== if this AP is not DD WRT supported============================
 
    If $hasDDWRT = False Then
+	  
+
+	  
 	  _logRunningStat ("This AP does not have DD-WRT interface")
 	  _logRunningStat ("Checking if this AP is Trendnet AP")
 	  Local $sSrc = _IEDocReadHTML($oIE)
@@ -379,7 +390,7 @@ If $interface = "WiFi" Then
 		 If ($loop >= 20) Then	
 			$ret = "Failed !"
 		 EndIf
-			   
+		 $ret = "Success"
 	  ElseIf $isTRENDNET = 0 Then ; This is the BELKIN
 		 logRunningStat ("FOUND BELKIN AP ???????????????????????????????????????????????")
 		 $RF = $CMDLINE[3]
@@ -612,34 +623,55 @@ EndFunc
 ;#include <constants.au3>
 ;return 1 if the SSID is on, 0 if the SSID is off
 Func _checkSSID($SSID)
-   ;findstr "identifier"
-   Local $foo = ""
    If IsDeclared("VM_Ip") Then
+	  
 	  If ($VM_Ip  = "NA") Then
-		 _logRunningStat ("Running netsh on local machine")
-		 $foo = Run(" netsh wlan show networks", @SystemDir, @SW_HIDE, $STDERR_CHILD + $STDOUT_CHILD)
+   		 ConsoleWrite ("Running netsh on local machine")
+		 $foo = Run("netsh wlan show networks", @SystemDir, @SW_HIDE, $STDERR_CHILD + $STDOUT_CHILD)
 	  Else
 		 If IsDeclared("VM_Host_User") And IsDeclared("VM_Host_Password") Then
-			_logRunningStat ("Running netsh on local host")
-			$foo = Run("C:\ISCT\AVE\psexec.exe \\" & $VM_Ip & " -u " & $VM_Host_User & " -p " & $VM_Host_Password & " netsh.exe wlan show networks | findstr " & $SSID, @SystemDir, @SW_HIDE, $STDERR_CHILD + $STDOUT_CHILD)
+			$cmd_pid = Run("cmd.exe", "", @SW_MAXIMIZE, $STDOUT_CHILD + $RUN_CREATE_NEW_CONSOLE + $STDERR_CHILD)
+			Sleep(5000)
+			$cmd_hwnd = _GetHwndFromPID($cmd_pid)
+			ControlSend($cmd_hwnd, "", "", "C:\ISCT\AVE\psexec.exe \\192.168.8.102 -u AOAC -p intel@1234 netsh wlan show networks" & @CR)
+			Sleep(5000)
+			$kill_console = "C:\WINDOWS\system32\windowspowershell\v1.0\powershell.exe Stop-Process -id " & $cmd_pid
+			Run($kill_console, @SystemDir, @SW_HIDE, $STDERR_CHILD + $STDOUT_CHILD)
 		 EndIf
-		 
 	  EndIf
    Endif
    
+   ProcessWaitClose($cmd_pid)
+   $result = StdoutRead($cmd_pid)
+   ;_logRunningStat ("Result : " & $result)
+   Local $toRet = StringRegExp ( $result, $SSID)
+   _logRunningStat ("[_checkSSID] Return : " & $toRet)
+   Return $toRet
    
-   
-   $result = ""
-   While 1
-	   $line = StdoutRead($foo)
-	   If @error Then ExitLoop
-	   $result &= $line
-	Wend
-   _logRunningStat ("Result : " & $result)
-   Return StringRegExp ( $result, $SSID)
-   
-EndFunc 
+EndFunc
 
+;check if the LAN is off or on
+Func _checkLAN($ipAddress, $switch)
+   $cmd_pid = Run("cmd.exe", "", @SW_MAXIMIZE, $STDOUT_CHILD + $RUN_CREATE_NEW_CONSOLE + $STDERR_CHILD)
+   Sleep(5000)
+   $cmd_hwnd = _GetHwndFromPID($cmd_pid)
+   ControlSend($cmd_hwnd, "", "", "ping " & $ipAddress & @CR)
+   Sleep(5000)
+   $kill_console = "C:\WINDOWS\system32\windowspowershell\v1.0\powershell.exe Stop-Process -id " & $cmd_pid
+   Run($kill_console, @SystemDir, @SW_HIDE, $STDERR_CHILD + $STDOUT_CHILD) 
+   
+   ProcessWaitClose($cmd_pid)
+   $result = StdoutRead($cmd_pid)
+   ;_logRunningStat ("Result : " & $result)
+   Local $toRet = StringRegExp ( $result, "TTL")
+   If $switch = 1 And $toRet = 1 Then
+	  return 1
+   ElseIf $switch = 0 And $toRet = 0 Then
+	  return 1
+   EndIf
+   return 0
+EndFunc
+   
 ;check if the network has connection by pinging the IP
 Func _hasNetwork($ip)
    Local $foo = Run("ping " & $ip , @SystemDir, @SW_HIDE, $STDERR_CHILD + $STDOUT_CHILD)
