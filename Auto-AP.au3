@@ -390,7 +390,7 @@ If $interface = "WiFi" Then
 		 If ($loop >= 20) Then	
 			$ret = "Failed !"
 		 EndIf
-		 $ret = "Success"
+
 	  ElseIf $isTRENDNET = 0 Then ; This is the BELKIN
 		 logRunningStat ("FOUND BELKIN AP ???????????????????????????????????????????????")
 		 $RF = $CMDLINE[3]
@@ -623,27 +623,30 @@ EndFunc
 ;#include <constants.au3>
 ;return 1 if the SSID is on, 0 if the SSID is off
 Func _checkSSID($SSID)
+   $result = ""
    If IsDeclared("VM_Ip") Then
 	  
 	  If ($VM_Ip  = "NA") Then
    		 ConsoleWrite ("Running netsh on local machine")
 		 $foo = Run("netsh wlan show networks", @SystemDir, @SW_HIDE, $STDERR_CHILD + $STDOUT_CHILD)
+		 ProcessWaitClose($foo)
+		 $result = StdoutRead($foo)
 	  Else
 		 If IsDeclared("VM_Host_User") And IsDeclared("VM_Host_Password") Then
 			$cmd_pid = Run("cmd.exe", "", @SW_MAXIMIZE, $STDOUT_CHILD + $RUN_CREATE_NEW_CONSOLE + $STDERR_CHILD)
 			Sleep(5000)
 			$cmd_hwnd = _GetHwndFromPID($cmd_pid)
-			ControlSend($cmd_hwnd, "", "", "C:\ISCT\AVE\psexec.exe \\192.168.8.102 -u AOAC -p intel@1234 netsh wlan show networks" & @CR)
+			ControlSend($cmd_hwnd, "", "", "C:\ISCT\AVE\psexec.exe \\" &  $VM_Ip  & " -u " & $VM_Host_User & " -p "  & $VM_Host_Password  & " netsh wlan show networks" & @CR)
+			;ControlSend($cmd_hwnd, "", "", "C:\ISCT\AVE\psexec.exe \\" +  $VM_Ip  " -u " & $VM_Host_User & " -p "  & $VM_Host_Password  " netsh wlan show networks" & @CR)
 			Sleep(5000)
 			$kill_console = "C:\WINDOWS\system32\windowspowershell\v1.0\powershell.exe Stop-Process -id " & $cmd_pid
 			Run($kill_console, @SystemDir, @SW_HIDE, $STDERR_CHILD + $STDOUT_CHILD)
+			ProcessWaitClose($cmd_pid)
+			$result = StdoutRead($cmd_pid)
 		 EndIf
-	  EndIf
-   Endif
-   
-   ProcessWaitClose($cmd_pid)
-   $result = StdoutRead($cmd_pid)
-   ;_logRunningStat ("Result : " & $result)
+	  Endif
+   EndIf
+
    Local $toRet = StringRegExp ( $result, $SSID)
    _logRunningStat ("[_checkSSID] Return : " & $toRet)
    Return $toRet
