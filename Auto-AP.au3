@@ -54,11 +54,12 @@ EXAMPLE
    Global $logFileName = ""
    Global $loggingEnabled = 0
    Global $logFile = ""
-   Global $oIE ; instance of Internet Explorer
+   Global $oIE = _IECreate(); instance of Internet Explorer
    Global $VM_Ip ; IP address of the Virtual Machine
    Global $VM_Host_User ; user name of the host machine
    Global $VM_Host_Password ; password of the host machine
    Global $isct_conf ; content of iSCT.conf file
+   Global $hasDDWRT = -1
 #EndRegion Global Var Declaration
 
 _killPrevRunInstance() ;killing any prev running instance of Auto-AP.exe
@@ -81,6 +82,10 @@ _killPrevRunInstance() ;killing any prev running instance of Auto-AP.exe
 	  _logErr ($error)
    Else
 	  $configFilePath = $CMDLINE[1]
+		;read the iSCT.conf file into Global var $isct_conf
+	   If Not _FileReadToArray($configFilePath, $isct_conf) Then
+		   _logErr ("Error reading config file: " & @error )
+	   EndIf
    EndIf
 
    ;set the param $identifier to SSID , error checking for identifier will start in the parsing process
@@ -164,10 +169,7 @@ _killPrevRunInstance() ;killing any prev running instance of Auto-AP.exe
 	  EndIf  
    EndIf
 
-	;read the iSCT.conf file into Global var $isct_conf
-   If Not _FileReadToArray($configFilePath, $isct_conf) Then
-	   _logErr ("Error reading config file: " & @error )
-   EndIf
+
    
 #EndRegion Parsing command line argument (and err catching), also set up for saving debug log file
 _logRunningStat ("Param initialization finished")
@@ -256,7 +258,6 @@ Func _WiFi_Handler()
    Endif
    ;create the string of http address
    $address = "http://" & $ipAddress
-   $oIE = _IECreate()
    _IENavigate($oIE, $address)
    _logRunningStat ("Navigating to URL address : " & $address)
    _IELoadWait ($oIE)
@@ -264,7 +265,7 @@ Func _WiFi_Handler()
 		 _logErr(@error)
    Endif  
    
-   $hasDDWRT = 1
+
    _checkDDWRT()
    ;MsgBox(0, Default, $hasDDWRT)
    
@@ -272,7 +273,6 @@ Func _WiFi_Handler()
    If $hasDDWRT = True Then
 	  _logRunningStat ("This AP has DD-WRT interface")
 	  _logRunningStat ("Killing any running IE instances")
-	  _killProc('iexplore.exe')
 	  ;MsgBox(0, Default, "DD-WRT")
 	  $plinkPath = "C:\ISCT\AVE\plink.exe"
 	  
@@ -719,15 +719,11 @@ EndFunc
 
 ;check in the configuration file if DebugEnabled is specified
 Func _checkDebugEnabled($configFilePath)
-   Local $aRecords
-   If Not _FileReadToArray($configFilePath, $aRecords) Then
-	   _logErr ("Error reading config file: " & @error )
-   EndIf
-	
+
    $aSplit = "";
-   For $x = 1 To $aRecords[0]
-	  If StringRegExp ($aRecords[$x] , "Auto_AP_Debug", 0 )Then
-		 $aSplit = StringSplit($aRecords[$x], "=")
+   For $x = 1 To $isct_conf[0]
+	  If StringRegExp ($isct_conf[$x] , "Auto_AP_Debug", 0 )Then
+		 $aSplit = StringSplit($isct_conf[$x], "=")
 		 ExitLoop
 	  EndIf
    Next
@@ -872,8 +868,10 @@ EndFunc
 
 Func _cleanUp()
    _logRunningStat ("Killing any running IE instances")
+   
    If IsDeclared("oIE") Then
 	  _IEQuit($oIE)
+	  ;_killProc('iexplore.exe')
 	  _logRunningStat ("[Cleaning up] Clearing the IE cache")
 	  Run("RunDll32.exe InetCpl.cpl,ClearMyTracksByProcess " & 255) ; clear the cache
    EndIf
