@@ -1,138 +1,196 @@
-;ShellExecute("http://192.168.1.17:8080") 
+#cs ---------------------------------------------------------------------------------------------------------------
+#
+#		INTEL CORPORATION PROPRIETARY INFORMATION
+#
+# 		This software is supplied under the terms of a license agreement or
+# 		nondisclosure agreement with Intel Corporation and may not be copied
+# 		or disclosed except in accordance with the terms of that agreement.
+# 		Copyright (c) 2012 Intel Corporation. All Rights Reserved.
+#
+#		ISCT - Automation Validation
+-----------------------------------------------------------------------------------------------------------
+NAME
+	  Auto-AP.Execute
+	  
+SYNOPSIS
+
+	  Switch OFF/ON the Wifi/LAN connection 
+
+SYNTAX
+
+	  Auto-AP.exe 	<config-file-path> 	<SSID>		<interface>		<switch> 	[-s directory]
+	  
+	  <config-file-path>	: the path to the iSCT.conf file 
+	  <SSID>				: the SSID 
+	  <interface>			: (LAN/WiFi)
+	  <switch> 				: ON or OFF
+	  [-s directory]	: optional param, specify what directory to save the log file, if this option is omitted, no log file will be saved.  However, if the flag 
+							  Auto_AP_Debug is set to 1 in the iSCT.conf file then the logging info will be saved at default directory C:\ISCT\ISCT-Log
+							  
+EXAMPLE
+	  Auto-AP.exe 	C:\ISCT\AVE\iSCT.conf 	REMOTEWAKE6-2.4Ghz	 	WiFi	ON  -s C:\iSCT\ISCT-log
+	  
+	  Will switch ON the WlAN interface of the SSID REMOTEWAKE6-2.4Ghz and save the log at the location C:\iSCT\ISCT-log
+	  
+	  
+-----------------------------------------------------------------------------------------------------------------
+#ce -------------------------------------------------------------------------------------------------------------
 
 #include <IE.au3>
 #include <constants.au3>
 #include <File.au3>
 
 
-; $CMD[0] is the number of argument
 
-; [Path of iSCT.conf] [SSID] [WLAN / LAN] [ ON/ OFF] 
-;"C:\Users\huynguyx\isct.conf"
+#Region Global Var Declaration
+   Global $error = ""
+   Global $ret = "Success"
+   Global $configFilePath = "" ; iSCT.conf file path
+   Global $identifier = "" ; [ xabcre]
+   Global $interface = "" ; (LAN/WiFi)
+   Global $opt = "" ; OFF / ON
+   Global $logPath = "" ; path to store log file
+   Global $timestamp = ""
+   Global $logFileName = ""
+   Global $loggingEnabled = 0
+   Global $logFile = ""
+   Global $oIE ; instance of Internet Explorer
+   Global $VM_Ip ; IP address of the Virtual Machine
+   Global $VM_Host_User ; user name of the host machine
+   Global $VM_Host_Password ; password of the host machine
+   Global $isct_conf ; content of iSCT.conf file
+#EndRegion Global Var Declaration
 
-;param initialization
-$error = ""
-$ret = "Success"
-$configFilePath = ""
-$identifier = "" ; [ xabcre]
-$interface = "" ; LAN / WLAN
-$opt = "" ; OFF / ON
-$logPath = "" ; path to store log file
-$timestamp = ""
-$logFileName = ""
-$loggingEnabled = 0
-Global $logFile = ""
+_killPrevRunInstance() ;killing any prev running instance of Auto-AP.exe
 
-_killPrevRunInstance()
+#Region Parsing command line argument (and err catching), read the config file and also set up for saving debug log file
+   If $CMDLINE[0] = 0 Then
+	  _printUsage()
+	  Exit(0)
+   EndIf
 
-If $CMDLINE[0] = 0 Then
-   _printUsage()
-   Exit(0)
-EndIf
-
-If $CMDLINE[0] = 4 Or $CMDLINE[0] = 6 Then
-Else
-   	$error = "Error: Invalid number of arguments"
-   _logErr ($error)
-EndIf
-
-If Not FileExists ($CMDLINE[1]) Then
-   $error = "Error: File does not exist"
-   _logErr ($error)
-Else
-   $configFilePath = $CMDLINE[1]
-EndIf
-
-;error checking for identifier will start in the parsing process
-$identifier = $CMDLINE[2] ; [ xabcre]
-
-If ($CMDLINE[3] = "LAN" Or $CMDLINE[3] = "WiFi" ) Then
-   $interface = $CMDLINE[3] ; LAN / WLAN
-Else
-   $error = "Error: Invalid interface ( LAN / WiFi)"
-   _logErr ($error)
-EndIf
-   
-If ($CMDLINE[4] = "OFF" Or $CMDLINE[4] = "ON" )  Then
-   $opt = $CMDLINE[4] ; OFF / ON
-Else
-   $error = "Error: Invalid option ( OFF / ON)"
-   _logErr ($error)
-EndIf
-
-;check if debug logging is enabled
-
-;if logFile is specified
-If $CMDLINE[0] = 6  Then
-   
-   If $CMDLINE[5] = "-s" Or $CMDLINE[5] = "-S" Then
+   If $CMDLINE[0] = 4 Or $CMDLINE[0] = 6 Then
    Else
-	  $error = "Error: Invalid param : " & $CMDLINE[5]
+	   $error = "Error: Invalid number of arguments"
 	  _logErr ($error)
    EndIf
-   
-   $logPath = ""
-   If $loggingEnabled = 1 Then
-	  $logPath = "C:\ISCT\ISCT-log"
-   EndIf
-   
-   If Not FileExists ($CMDLINE[6]) and $logPath = "" Then
-	  If Not FileExists($logPath) Then
-		 $error = "Error: Directory to store log file not exist"
+
+   ;check if the config file exist, If error then log error, else set the path to param $configFilePath
+   If Not FileExists ($CMDLINE[1]) Then
+	  $error = "Error: File does not exist"
 	  _logErr ($error)
+   Else
+	  $configFilePath = $CMDLINE[1]
+   EndIf
+
+   ;set the param $identifier to SSID , error checking for identifier will start in the parsing process
+   $identifier = $CMDLINE[2] ; [ xabcre]
+
+   ;error checking on the interface (LAN/WiFi)
+   If ($CMDLINE[3] = "LAN" Or $CMDLINE[3] = "WiFi" ) Then
+	  $interface = $CMDLINE[3] ; LAN / WLAN
+   Else
+	  $error = "Error: Invalid interface ( LAN / WiFi)"
+	  _logErr ($error)
+   EndIf
+	  
+   ;error checking on the Switch Option (ON/OFF)
+   If ($CMDLINE[4] = "OFF" Or $CMDLINE[4] = "ON" )  Then
+	  $opt = $CMDLINE[4] ; OFF / ON
+   Else
+	  $error = "Error: Invalid option ( OFF / ON)"
+	  _logErr ($error)
+   EndIf
+
+   ;if -s option is entered
+   If $CMDLINE[0] = 6  Then
+	  
+	  If $CMDLINE[5] = "-s" Or $CMDLINE[5] = "-S" Then
+	  Else
+		 $error = "Error: Invalid param : " & $CMDLINE[5]
+		 _logErr ($error)
+	  EndIf
+	  
+	  $logPath = ""
+	  If $loggingEnabled = 1 Then
+		 $logPath = "C:\ISCT\ISCT-log"
+	  EndIf
+	  
+	  If Not FileExists ($CMDLINE[6]) and $logPath = "" Then
+		 If Not FileExists($logPath) Then
+			$error = "Error: Directory to store log file not exist"
+		 _logErr ($error)
+		 EndIf
+	  EndIf
+	  
+	  $logPath = $CMDLINE[6] ; path to store log file
+	  ;log file name is : Auto_AP_timestamp
+	  $timestamp = @HOUR & "_" & @MIN & "_" & @SEC
+	  $logFileName = $logPath & "\Auto_AP_" & $timestamp & ".txt"
+	  ConsoleWrite("[Auto-AP] - Log file stored at " & $logFileName & @LF )
+	  $loggingEnabled = 1
+	
+	  ;open file to write
+	  ;create directory structure if it doesn't exist, and open file to write
+	  $logFile = FileOpen($logFileName, 10) ; which is similar to 2 + 8 (erase + create dir)
+
+	  If $logFile = -1 Then
+		 $error = "Error: Cannot open file to write"
+		  _logErr ($error)
+		  Exit
 	  EndIf
    EndIf
-   
-   $logPath = $CMDLINE[6] ; path to store log file
-   ;log file name is : Auto_AP_timestamp
-   $timestamp = @HOUR & "_" & @MIN & "_" & @SEC
-   $logFileName = $logPath & "\Auto_AP_" & $timestamp & ".txt"
-   ConsoleWrite("[Auto-AP] - Log file stored at " & $logFileName & @LF )
-   $loggingEnabled = 1
- 
-   ;open file to write
-   ;create directory structure if it doesn't exist, and open file to write
-   $logFile = FileOpen($logFileName, 10) ; which is similar to 2 + 8 (erase + create dir)
 
-   If $logFile = -1 Then
-	  $error = "Error: Cannot open file to write"
-	   _logErr ($error)
-	   Exit
+   ;check if logging enabled is specified in the iSCT.conf
+   $loggingEnabled  = _checkDebugEnabled($configFilePath)
+   _logRunningStat ("Logging Enabled = " & $loggingEnabled)
+
+   ;if -s flag not specified and the loggingEnabled is 1 (parsed from configuration file)
+   If $loggingEnabled = 1 And $logFileName = "" Then
+	  $logPath = "C:\ISCT\ISCT-Log" ; default path to store log file
+	  ;log file name is : Auto_AP_timestamp
+	  $timestamp = @HOUR & "_" & @MIN & "_" & @SEC
+	  $logFileName = $logPath & "\Auto_AP_" & $timestamp & ".txt"
+	  $loggingEnabled = 1
+	
+	  ;open file to write
+	  ;create directory structure if it doesn't exist, and open file to write
+	  $logFile = FileOpen($logFileName, 10) ; which is similar to 2 + 8 (erase + create dir)
+
+	  If $logFile = -1 Then
+		 $error = "Error: Cannot open file to write"
+		  _logErr ($error)
+		  Exit
+	  EndIf  
    EndIf
-EndIf
 
-$loggingEnabled  = _checkDebugEnabled($configFilePath)
-_logRunningStat ("Logging Enabled = " & $loggingEnabled)
-
-;if -s flag not specified and the loggingEnabled is 1 (parsed from configuration file)
-If $loggingEnabled = 1 And $logFileName = "" Then
-   $logPath = "C:\ISCT\ISCT-Log" ; path to store log file
-   ;log file name is : Auto_AP_timestamp
-   $timestamp = @HOUR & "_" & @MIN & "_" & @SEC
-   $logFileName = $logPath & "\Auto_AP_" & $timestamp & ".txt"
-   ;ConsoleWrite("[Auto-AP] - -s Flag not specified, but Auto_AP_Debug is set to 1, in iSCT.conf "& @LF )
-   ;ConsoleWrite("[Auto-AP] - Log file stored at " & $logFileName & @LF )
-   $loggingEnabled = 1
- 
-   ;open file to write
-   ;create directory structure if it doesn't exist, and open file to write
-   $logFile = FileOpen($logFileName, 10) ; which is similar to 2 + 8 (erase + create dir)
-
-   If $logFile = -1 Then
-	  $error = "Error: Cannot open file to write"
-	   _logErr ($error)
-	   Exit
-   EndIf  
-EndIf
+	;read the iSCT.conf file into Global var $isct_conf
+   If Not _FileReadToArray($configFilePath, $isct_conf) Then
+	   _logErr ("Error reading config file: " & @error )
+   EndIf
    
+#EndRegion Parsing command line argument (and err catching), also set up for saving debug log file
 _logRunningStat ("Param initialization finished")
 _logRunningStat ("Configuration file path: " & $configFilePath)
 _logRunningStat ("Interface: " & $interface)
 _logRunningStat ("Switch: " & $opt)
 _logRunningStat ("Log file is being saved at: " & $logFileName)
 
+
+#Region MAIN 
 If $interface = "WiFi" Then
-   
+   _WiFi_Handler()
+ElseIf $interface = "LAN" Then
+   _LAN_Handler()
+EndIf
+
+_cleanUp() ;cleaning up and exit
+#EndRegion MAIN
+
+#Region ROUTINES (FUNCTIONS) DECLARATION
+
+Func _WiFi_Handler()
+
    ;getting VM info
    _logRunningStat ("Getting VM host ip address")
    $toGet = "VM_Host_IP"
@@ -156,9 +214,8 @@ If $interface = "WiFi" Then
 	  _logRunningStat ("This is host machine")
    EndIf
    
-   $init = True ; initial check
    _logRunningStat ("Check if the SSID is ALREADY " & $opt)
-   $check =   _checkSSID($identifier, $init ) ;check if the SSID is already ON or OFF
+   $check =   _checkSSID($identifier, True ) ;check if the SSID is already ON or OFF
    _logRunningStat ("[_checkSSID] return : " & $check)
    $switch = 1
    If $opt = "on" Then
@@ -178,28 +235,27 @@ If $interface = "WiFi" Then
 	  EndIf	 
 	  $switch = "down"
    EndIf
-   ;Return "Not Implemented"
+
    _logRunningStat ("Continue with the execution " & $opt)
-   ;_killProc('iexplore.exe')
+   
+   ;cleaning the IE cache, to prevent the IE pop up : "go to prev page"
    _logRunningStat ("Clearing the IE cache")
    Run("RunDll32.exe InetCpl.cpl,ClearMyTracksByProcess " & 255) ; clear the cache
    _logRunningStat ("Sleeping for 20 seconds")
    sleep(20000)
-   ; Create a browser window and navigate to  login page
-
+   
+   
+   ; //****** Create a browser window and navigate to  login page
+   ;//************************************************************
+   
+   ;getting the AP's IP address to nagvigate to the page, log the error and return if found error on parsing (missing info)
    $toGet = "AP_IP"
-
-   ; getting the IpAddress, return Error if NOT FOUND
    $ipAddress = _getProperty($configFilePath ,$identifier, $toGet)
-
    If StringInStr( $ipAddress, "Error") Then
 	  _logErr ($ipAddress)
    Endif
-
-
-
+   ;create the string of http address
    $address = "http://" & $ipAddress
-   ;$oIE = _IECreate($address, 0,0,1,1)
    $oIE = _IECreate()
    _IENavigate($oIE, $address)
    _logRunningStat ("Navigating to URL address : " & $address)
@@ -268,8 +324,7 @@ If $interface = "WiFi" Then
 	  EndIf
 
 	  _logRunningStat ("Checking if the SSID is turned " & $opt)
-	  $init = False ; not the initial check, run for total iteration of 20 (max)
-	  $checkReturn = _checkSSID($identifier, $init)
+	  $checkReturn = _checkSSID($identifier, False)
 	  If $checkReturn = 1 Then
 		 _logRunningStat ("SSID is still not shown in the netsh wlan show networks ")
 		 $ret = "Failed !"
@@ -292,18 +347,17 @@ If $interface = "WiFi" Then
 	  Endif
 
 	  Dim $isTRENDNET = StringRegExp($sSrc, '.*TEW*', 0)
-	  ;Dim $isBELKIN = StringRegExp($sSrc, '.*TEW*', 0)
 
-	  
-	  If $isTRENDNET  = 1 Then ;this is the TRENDNET AP
+	  ;this is the TRENDNET AP
+	  If $isTRENDNET  = 1 Then 
 		 _logRunningStat  ("FOUND Trendnet AP")
-		 $o_form = _IEGetObjByName ($oIE, "form1")
-		 $o_login = _IEFormElementGetObjByName($o_form, "login_n") ; username
-		 $o_password = _IEFormElementGetObjByName($o_form, "login_pass") ; password
+		 Local $o_form = _IEGetObjByName ($oIE, "form1")
+		 Local $o_login = _IEFormElementGetObjByName($o_form, "login_n") ; username
+		 Local $o_password = _IEFormElementGetObjByName($o_form, "login_pass") ; password
 		 
-		 $toGet = "Username"
+		 Local $toGet = "Username"
 		 ; getting  user name
-		 $web_userName = _getProperty($configFilePath ,$identifier, $toGet)
+		 Local $web_userName = _getProperty($configFilePath , $identifier, $toGet)
 		 
 		 If StringInStr($web_userName, "Error") Then
 			 _logErr ($web_userName)
@@ -311,7 +365,7 @@ If $interface = "WiFi" Then
 		 ;getting web site password
 		 $toGet = "Password"
 		 ; getting  user name
-		 $web_password = _getProperty($configFilePath ,$identifier, $toGet)
+		 Local $web_password = _getProperty($configFilePath ,$identifier, $toGet)
 
 
 		 If StringInStr($web_password, "Error") Then
@@ -326,21 +380,19 @@ If $interface = "WiFi" Then
 		 _IEFormElementSetValue($o_login, $web_userName)
 		 _IEFormElementSetValue($o_password, $web_password)
 		 
-		 $oSubmit = _IEGetObjByName ($o_form, "login")
+		 Local $oSubmit = _IEGetObjByName ($o_form, "login")
 		 _IEAction ($oSubmit, "click")
 		 _IELoadWait ($oIE)
 		 
 		 ;check if the entered username and password are incorrect
 		 Local $sSrc = _IEDocReadHTML($oIE)
-		 sleep(2000)
-
-		 Dim $isCorrectLogin = StringRegExp($sSrc, '.*User.Name.or.Password.incorrect*', 0)
+		 Local $isCorrectLogin = StringRegExp($sSrc, '.*User.Name.or.Password.incorrect*', 0)
 		 
 		 If $isCorrectLogin = 1 Then
 			_logErr ("User name or password entered to the form is incorrect")
 		 Endif
 		 
-		 $addressWireless = "http://" & $ipAddress & "/wireless_basic.asp"
+		 Local $addressWireless = "http://" & $ipAddress & "/wireless_basic.asp"
 		 
 		 _logRunningStat ("Navigating to this URL address : " & $addressWireless)		 
 		 _IENavigate($oIE, $addressWireless)
@@ -366,106 +418,18 @@ If $interface = "WiFi" Then
 		 Sleep ($sleepTime)
 		 
 		 _logRunningStat ("Checking if the SSID is turned " & $opt)
-		 $init = False ; not the initial check, run for total iteration of 20 (max)
-		 $checkReturn = _checkSSID($identifier, $init)
+		 $checkReturn = _checkSSID($identifier, False)
 		 If $checkReturn = 1 Then
 			_logRunningStat ("SSID is still not shown in the netsh wlan show networks ")
 			$ret = "Failed !"
-		 EndIf
-		 
-	  ElseIf $isTRENDNET = 0 Then ; This is the BELKIN
-		 logRunningStat ("FOUND BELKIN AP ???????????????????????????????????????????????")
-		 $RF = $CMDLINE[3]
-		 $belkinWirelessPage = "http://192.168.1.15:8080/wireless_id.stm"
-		 _IENavigate($oIE, $belkinWirelessPage)
-		 
-		 ; login 
-		 BlockInput(1); //block all input from keyboard and mouse		 
-		 Send("^f")
-		 Sleep(2000)
-		 Send("Password")
-		 Sleep(2000)
-		 SEnd("{TAB 2}")
-		 Sleep(2000)
-		 Send("intel@1234")
-		 Sleep(2000)
-		 Send("{ENTER}")
-		 Sleep(2000)
-		 ;============
-
-			
-		 if $RF = 2.4 Then
-			Send("^f")
-			Sleep(2000)
-			Send("Self Healing")
-			Sleep(2000)
-			Send("{TAB 5}")
-			Sleep(2000)
-			
-			if $opt = 0 Then
-			   Send("O")	
-			ElseIf $opt = 1 Then
-			   Send("O")
-			   Sleep(2000)
-			   Send("{DOWN 3}")
-			EndIf
-			   
-			;check if 5Ghz is turn on and save the setting
-			$ssid = "JF3.SW.Lab2.5GHz"			
-			Send("^f")
-			Sleep(2000)
-			Send("{BS}") ; random char
-			Sleep(2000)
-			Send("{ESC}")
-			Sleep(2000)
-			Send("^f")
-			Sleep(2000)
-			Send("5Ghz")
-			If _checkSSID($ssid) = 1 Then
-			   Send("{TAB 14}")
-			ElseIf _checkSSID($ssid) = 0 Then
-			   Send("{TAB 13}")
-			EndIf
-			Sleep(2000)
-			Send("{ENTER}")
-			
-		 ElseIf $RF = 5 Then
-			Send("^f")
-			Sleep(2000)
-			Send("5Ghz")
-			Sleep(2000)
-			Send("{TAB 4}")
-			Sleep(2000)
-			
-			if $opt = 0 Then
-			   Send("O")
-			   Sleep(2000)
-			   Send("{TAB 9}")
-			ElseIf $opt = 1 Then
-			   Send("O")
-			   Sleep(2000)
-			   Send("{DOWN 3}")
-			   Sleep(2000)
-			   Send("{TAB 10}")
-			EndIf
-			   
-			;save the setting
-			Sleep(2000)
-			Send("{ENTER}")
-			; if the RF param is empty (not specified by user input) , turn both the RF off
-		 ElseIf $RF = 0 Then
-			; to be implemented
-			;MsgBox(0, Default, "Switching both RF off (To be Implemented, script is exitting...)")
-			;exit (0)
-		 EndIf
-			
-		 Sleep(2000)
-	
+		 EndIf	
 	  EndIf
 
    EndIf
-	  
-ElseIf $interface = "LAN" Then
+EndFunc
+
+
+Func _LAN_Handler()
    ;pre-defined param:
    ;$opt = "on"
    
@@ -557,15 +521,7 @@ ElseIf $interface = "LAN" Then
    Sleep(5000)
    
    _logRunningStat ("Finished switching LAN port " & $opt )
-EndIf
-
-
-_cleanUp()
-;cleaning up and exit
-
-
-;======================================== needed routines ====================================
-
+EndFunc
 
  Func _killProc($sPID)
     If IsString($sPID) Then $sPID = ProcessExists($sPID)
@@ -782,17 +738,11 @@ EndFunc
 
 ; parse the conf file and get a specific item of the identified subject 
 Func _getProperty($configFilePath , $identifier, $toGet)
-   
-   Local $aRecords
-   If Not _FileReadToArray($configFilePath, $aRecords) Then
-	   _logErr ("Error reading config file: " & @error )
-   EndIf
-
-
+  
    Local $idIndex = 0
 
-   For $x = 1 To $aRecords[0]
-	  If StringRegExp ($aRecords[$x] , "\[" & $identifier & "\]", 0 )Then
+   For $x = 1 To $isct_conf[0]
+	  If StringRegExp ($isct_conf[$x] , "\[" & $identifier & "\]", 0 )Then
 		 $idIndex = $x
 		 ExitLoop
 	   EndIf
@@ -801,11 +751,11 @@ Func _getProperty($configFilePath , $identifier, $toGet)
    If $idIndex = 0 Then _logErr ("Error: " & $identifier & " not Found")
 	  
    Local $toGetIndex = 0
-   For $x = $idIndex + 1 To $aRecords[0]
-	  If StringRegExp ($aRecords[$x] , "\[.*.\]", 0 )Then
+   For $x = $idIndex + 1 To $isct_conf[0]
+	  If StringRegExp ($isct_conf[$x] , "\[.*.\]", 0 )Then
 		 ExitLoop
 	  EndIf
-	  If StringRegExp ($aRecords[$x] , $toGet & "=.*.", 0 )Then
+	  If StringRegExp ($isct_conf[$x] , $toGet & "=.*.", 0 )Then
 		 $toGetIndex= $x
 		 ExitLoop
 	  EndIf
@@ -815,7 +765,7 @@ Func _getProperty($configFilePath , $identifier, $toGet)
 	
    If $toGetIndex = 0 Then _logErr ("Error: " & $toGet & " of " & $identifier &   " not found")
 	  
-   $line = $aRecords[$toGetIndex]
+   $line = $isct_conf[$toGetIndex]
    $aSplit = StringSplit($line, "=")
    return $aSplit[2] ; return the item
 EndFunc
@@ -936,3 +886,5 @@ Func _cleanUp()
    FileClose ($logFile)
    exit(0)
 EndFunc
+
+#EndRegion ROUTINES (FUNCTIONS) DECLARATION
