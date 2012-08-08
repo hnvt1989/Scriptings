@@ -156,24 +156,30 @@ If $interface = "WiFi" Then
 	  _logRunningStat ("This is host machine")
    EndIf
    
-   
-   $check =   _checkSSID($identifier) ;check if the SSID is already ON or OFF
+   $init = True ; initial check
+   _logRunningStat ("Check if the SSID is ALREADY " & $opt)
+   $check =   _checkSSID($identifier, $init ) ;check if the SSID is already ON or OFF
+   _logRunningStat ("[_checkSSID] return : " & $check)
    $switch = 1
    If $opt = "on" Then
-	  If $check = 1 Then
+	  If $check = 0 Then
 		 _logRunningStat("SSID is already ON. Script is exitting")
 		 _cleanUp()
+	  ElseIf $check = -1 Then
+		 _logErr ("Error in _checkSSID")
 	  EndIf
 	  $switch = "up"
    ElseIf $opt = "off" Then
 	  If $check = 0 Then
 		 _logRunningStat("SSID is already OFF. Script is exitting")
 		 _cleanUp()
-	  EndIf		 
+	  ElseIf $check = -1 Then
+		 _logErr ("Error in _checkSSID")
+	  EndIf	 
 	  $switch = "down"
    EndIf
    ;Return "Not Implemented"
-   
+   _logRunningStat ("Continue with the execution " & $opt)
    ;_killProc('iexplore.exe')
    _logRunningStat ("Clearing the IE cache")
    Run("RunDll32.exe InetCpl.cpl,ClearMyTracksByProcess " & 255) ; clear the cache
@@ -261,26 +267,14 @@ If $interface = "WiFi" Then
 		 Sleep (30000)
 	  EndIf
 
-	  $loop = 1
-
-	  _logRunningStat ("Checking if the SSID is " & $opt)
-	  For $i = 1 To 20 Step 1
-		 $isOnNetwork = _checkSSID($identifier)
-		 If ($opt ="ON") And($isOnNetwork = 1) Then
-			ExitLoop
-		 EndIf
-		 If ($opt ="OFF") And($isOnNetwork = 0) Then
-			ExitLoop
-		 EndIf
-		 _logRunningStat  ("Verifying if " & $interface & " of " & $identifier & " is turned " & $opt &". Sleeping for 10 seconds. Loop = " & $loop)
-		 $loop = $loop + 1
-		 Sleep(10000)
-	  Next	  
-	  
-	  _logRunningStat  ("Verifying if " & $interface & " of " & $identifier & " is turned " & $opt & ". Loop = " & $loop)
-      If ($loop >= 20) Then	
+	  _logRunningStat ("Checking if the SSID is turned " & $opt)
+	  $init = False ; not the initial check, run for total iteration of 20 (max)
+	  $checkReturn = _checkSSID($identifier, $init)
+	  If $checkReturn = 1 Then
+		 _logRunningStat ("SSID is still not shown in the netsh wlan show networks ")
 		 $ret = "Failed !"
 	  EndIf
+	  
    EndIf
    
    ;=================================== if this AP is not DD WRT supported============================
@@ -372,25 +366,13 @@ If $interface = "WiFi" Then
 		 Sleep ($sleepTime)
 		 
 		 _logRunningStat ("Checking if the SSID is turned " & $opt)
-		 $loop = 1
-		 For $i = 1 To 20 Step 1
-			$isOnNetwork = _checkSSID($identifier)
-			If ($opt ="ON") And($isOnNetwork = 1) Then
-			   ExitLoop
-			EndIf
-			If ($opt ="OFF") And($isOnNetwork = 0) Then
-			   ExitLoop
-			EndIf
-			_logRunningStat  ("Verifying if " & $interface & " of " & $identifier & " is turn " & $opt &". Sleeping for 10 seconds. Loop = " & $loop)
-			$loop = $loop + 1
-			Sleep(10000)
-		 Next	  
-		 
-		 _logRunningStat  ("Verifying if " & $interface & " of " & $identifier & " is turn " & $opt & ". Loop = " & $loop)
-		 If ($loop >= 20) Then	
+		 $init = False ; not the initial check, run for total iteration of 20 (max)
+		 $checkReturn = _checkSSID($identifier, $init)
+		 If $checkReturn = 1 Then
+			_logRunningStat ("SSID is still not shown in the netsh wlan show networks ")
 			$ret = "Failed !"
 		 EndIf
-
+		 
 	  ElseIf $isTRENDNET = 0 Then ; This is the BELKIN
 		 logRunningStat ("FOUND BELKIN AP ???????????????????????????????????????????????")
 		 $RF = $CMDLINE[3]
@@ -612,7 +594,14 @@ Func _printUsage()
 Func _checkDDWRT ()
    Local $sSrc = _IEDocReadHTML($oIE)
    sleep(2000)
+   Local $errOnPage = StringRegExp($sSrc, '.*Internet Explorer cannot display the webpage*', 0)
+   
+   If $errOnPage  = 1 Then
+	  _logErr ("[Checking DD-WRT] : Cannot go to the AP's website")
+   EndIf 
+   
    Local $aMatch = StringRegExp($sSrc, '.*DD-WRT*', 0)
+   
    If $aMatch = 1 Then
 	  $hasDDWRT = True
    ElseIf $aMatch = 0 Then
@@ -622,34 +611,119 @@ EndFunc
 
 ;#include <constants.au3>
 ;return 1 if the SSID is on, 0 if the SSID is off
-Func _checkSSID($SSID)
-   $result = ""
+Func _checkSSID($SSID , $init)
+   Local $check_result = -1
    If IsDeclared("VM_Ip") Then
 	  
 	  If ($VM_Ip  = "NA") Then
-   		 ConsoleWrite ("Running netsh on local machine")
-		 $foo = Run("netsh wlan show networks", @SystemDir, @SW_HIDE, $STDERR_CHILD + $STDOUT_CHILD)
-		 ProcessWaitClose($foo)
-		 $result = StdoutRead($foo)
+   		 _logRunningStat ("Running netsh on local machine" & @LF)
+		 _logRunningStat ("Resetting wireless adapter" & @LF)
+		 ;resetting the wireless adapter for quicker network detect
+		 $resetNetsh = Run('netsh interface set interface name="Wireless Network Connection" admin=disabled', @SystemDir, @SW_HIDE, $STDERR_CHILD + $STDOUT_CHILD)
+		 ProcessWaitClose($resetNetsh)
+		 Sleep(2000)
+		 $resetNetsh = Run('netsh interface set interface name="Wireless Network Connection" admin=enabled', @SystemDir, @SW_HIDE, $STDERR_CHILD + $STDOUT_CHILD)
+		 ProcessWaitClose($resetNetsh)
+		 Sleep(2000)
+		 
+		 $loop = 1
+		 For $i = 1 To 20 Step 1
+			$netshPID = Run("netsh wlan show networks", @SystemDir, @SW_HIDE, $STDERR_CHILD + $STDOUT_CHILD)
+			ProcessWaitClose($netshPID )
+			$resultStr = StdoutRead($netshPID )
+			_logRunningStat ("[_checkSSID] Netsh wlan show networks result : " & $resultStr)			
+			$isOnNetwork = StringRegExp ( $resultStr, $SSID)
+			If ($opt ="ON") And($isOnNetwork = 1) Then
+			   $check_result = 0
+			   ExitLoop
+			EndIf
+			If ($opt ="OFF") And($isOnNetwork = 0) Then
+			   $check_result = 0
+			   ExitLoop
+			EndIf
+			
+			;initial check
+			If $init = True Then
+			   If ($opt ="ON") And($isOnNetwork = 1) Then
+				  return  0 ; success
+			   ElseIf ($opt = "OFF") And($isOnNetwork = 0) Then
+				  return 0 ; success
+			   Else
+				  return 1 ; failed
+			   EndIf				  
+			EndIf
+			
+			_logRunningStat  ("Verifying if " & $interface & " of " & $identifier & " is turned " & $opt &". Sleeping for 10 seconds. Loop = " & $loop)
+			$loop = $loop + 1
+			Sleep(10000)
+		 Next
+		 
+		 If ($loop >= 20) Then	
+			$check_result = 1
+		 EndIf		 
+		 
 	  Else
 		 If IsDeclared("VM_Host_User") And IsDeclared("VM_Host_Password") Then
+			_logRunningStat ("Running netsh on local host" & @LF)
 			$cmd_pid = Run("cmd.exe", "", @SW_MAXIMIZE, $STDOUT_CHILD + $RUN_CREATE_NEW_CONSOLE + $STDERR_CHILD)
 			Sleep(5000)
 			$cmd_hwnd = _GetHwndFromPID($cmd_pid)
-			ControlSend($cmd_hwnd, "", "", "C:\ISCT\AVE\psexec.exe \\" &  $VM_Ip  & " -u " & $VM_Host_User & " -p "  & $VM_Host_Password  & " netsh wlan show networks" & @CR)
-			;ControlSend($cmd_hwnd, "", "", "C:\ISCT\AVE\psexec.exe \\" +  $VM_Ip  " -u " & $VM_Host_User & " -p "  & $VM_Host_Password  " netsh wlan show networks" & @CR)
-			Sleep(5000)
-			$kill_console = "C:\WINDOWS\system32\windowspowershell\v1.0\powershell.exe Stop-Process -id " & $cmd_pid
-			Run($kill_console, @SystemDir, @SW_HIDE, $STDERR_CHILD + $STDOUT_CHILD)
-			ProcessWaitClose($cmd_pid)
-			$result = StdoutRead($cmd_pid)
+			
+			
+			_logRunningStat ("Resetting wireless adapter" & @LF)
+			;resetting the wireless adapter for quicker network detect
+			ControlSend($cmd_hwnd, "", "", "C:\ISCT\AVE\psexec.exe \\" &  $VM_Ip  & " -u " & $VM_Host_User & " -p "  & $VM_Host_Password  & ' netsh interface set interface name="Wireless Network Connection" admin=disabled' & @CR)
+			Sleep(2000)
+			ControlSend($cmd_hwnd, "", "", "C:\ISCT\AVE\psexec.exe \\" &  $VM_Ip  & " -u " & $VM_Host_User & " -p "  & $VM_Host_Password  & ' netsh interface set interface name="Wireless Network Connection" admin=enabled' & @CR)
+			Sleep(10000)
+
+			$loop = 1
+			For $i = 1 To 20 Step 1
+			   $cmd_pid = Run("cmd.exe", "", @SW_MAXIMIZE, $STDOUT_CHILD + $RUN_CREATE_NEW_CONSOLE + $STDERR_CHILD)
+			   Sleep(5000)
+			   $cmd_hwnd = _GetHwndFromPID($cmd_pid)
+			   
+			   ControlSend($cmd_hwnd, "", "", "C:\ISCT\AVE\psexec.exe \\" &  $VM_Ip  & " -u " & $VM_Host_User & " -p "  & $VM_Host_Password  & " netsh wlan show networks" & @CR)
+			   $kill_console = "C:\WINDOWS\system32\windowspowershell\v1.0\powershell.exe Stop-Process -id " & $cmd_pid
+			   Run($kill_console, @SystemDir, @SW_HIDE, $STDERR_CHILD + $STDOUT_CHILD)
+			   ProcessWaitClose($cmd_pid)
+			   $resultStr = StdoutRead($cmd_pid)
+			   _logRunningStat ("[_checkSSID] Netsh wlan show networks result : " & $resultStr)
+			   $isOnNetwork = StringRegExp ( $resultStr, $SSID)
+			   
+			   If ($opt ="ON") And($isOnNetwork = 1) Then
+				  $check_result = 0 ; success
+				  ExitLoop
+			   EndIf
+			   If ($opt ="OFF") And($isOnNetwork = 0) Then
+				  $check_result = 0 ; success
+				  ExitLoop
+			   EndIf
+			   
+			   ;initial check
+			   If $init = True Then
+				  If ($opt ="ON") And($isOnNetwork = 1) Then
+					 return  0 ; success
+				  ElseIf ($opt = "OFF") And($isOnNetwork = 0) Then
+					 return 0
+				  Else
+					 return 1
+				  EndIf				  
+			   EndIf
+			   
+			   _logRunningStat  ("Verifying if " & $interface & " of " & $identifier & " is turned " & $opt &". Sleeping for 10 seconds. Loop = " & $loop)
+			   $loop = $loop + 1
+			   Sleep(10000)
+			Next
+			
+			If ($loop >= 20) Then	
+			   $check_result = 1 ; failure
+			EndIf
 		 EndIf
 	  Endif
    EndIf
-
-   Local $toRet = StringRegExp ( $result, $SSID)
-   _logRunningStat ("[_checkSSID] Return : " & $toRet)
-   Return $toRet
+   
+   Return $check_result
    
 EndFunc
 
