@@ -10,7 +10,7 @@
 #		ISCT - Automation Validation
 -----------------------------------------------------------------------------------------------------------
 NAME
-	  Auto-AP.Execute
+	  Auto-AP.Exe
 	  
 SYNOPSIS
 
@@ -60,6 +60,7 @@ EXAMPLE
    Global $VM_Host_Password ; password of the host machine
    Global $isct_conf ; content of iSCT.conf file
    Global $hasDDWRT = -1
+   Global $ipAddress = ""
 #EndRegion Global Var Declaration
 
 _killPrevRunInstance() ;killing any prev running instance of Auto-AP.exe
@@ -198,6 +199,10 @@ Func _WiFi_Handler()
    $toGet = "VM_Host_IP"
    ; getting the VM ip address
    $VM_Ip = _getProperty($configFilePath ,$identifier, $toGet)
+   If StringInStr( $VM_Ip, "Error") Then
+	  _logErr ($VM_Ip)
+   Endif
+   
    _logRunningStat ("VM ip address: " & $VM_Ip)
    
    If ($VM_Ip <> "NA") Then
@@ -205,12 +210,20 @@ Func _WiFi_Handler()
 	  $toGet = "VM_Host_Username"
 	  ; getting the VM ip address
 	  $VM_Host_User = _getProperty($configFilePath ,$identifier, $toGet)
+	  If StringInStr($VM_Host_User, "Error") Then
+		 _logErr ($VM_Host_User)
+	  Endif
+	  
 	  _logRunningStat ("VM Host Username : " & $VM_Host_User )
 	  
 	  _logRunningStat ("Getting VM host password")
 	  $toGet = "VM_Host_Password"
 	  ; getting the VM ip address
 	  $VM_Host_Password = _getProperty($configFilePath ,$identifier, $toGet)
+	  If StringInStr($VM_Host_Password, "Error") Then
+		 _logErr ($VM_Host_Password )
+	  Endif
+	  
 	  _logRunningStat ("VM Host password : " & $VM_Host_Password )
    Else
 	  _logRunningStat ("This is host machine")
@@ -260,6 +273,7 @@ Func _WiFi_Handler()
    $address = "http://" & $ipAddress
    _IENavigate($oIE, $address)
    _logRunningStat ("Navigating to URL address : " & $address)
+   ConsoleWrite("Navigating to URL address : " & $address & @LF)
    _IELoadWait ($oIE)
    If @error <> 0 Then 
 		 _logErr(@error)
@@ -284,14 +298,14 @@ Func _WiFi_Handler()
 	  Endif
 	  
 	  ; getting the Username, return the Error if NOT FOUND
-	  $toGet = "Username"
+	  $toGet = "AP_AdminName"
 	  $userName = _getProperty($configFilePath , $identifier, $toGet)
 	  If StringInStr( $userName, "Error") Then
 		  _logErr ($userName)
 	  Endif
 	  
 	  ; getting the password, return the Error if NOT FOUND
-	  $toGet = "Password"
+	  $toGet = "AP_Password"
 	  $passWord = _getProperty($configFilePath , $identifier, $toGet)
 	  If StringInStr( $passWord, "Error") Then
 		 _logErr ($passWord)
@@ -355,7 +369,7 @@ Func _WiFi_Handler()
 		 Local $o_login = _IEFormElementGetObjByName($o_form, "login_n") ; username
 		 Local $o_password = _IEFormElementGetObjByName($o_form, "login_pass") ; password
 		 
-		 Local $toGet = "Username"
+		 Local $toGet = "AP_AdminName"
 		 ; getting  user name
 		 Local $web_userName = _getProperty($configFilePath , $identifier, $toGet)
 		 
@@ -363,7 +377,7 @@ Func _WiFi_Handler()
 			 _logErr ($web_userName)
 		 Endif		 
 		 ;getting web site password
-		 $toGet = "Password"
+		 $toGet = "AP_Password"
 		 ; getting  user name
 		 Local $web_password = _getProperty($configFilePath ,$identifier, $toGet)
 
@@ -434,27 +448,41 @@ Func _LAN_Handler()
    ;$opt = "on"
    
    ;getting the lan port number on the switch
-   $toGet = "lanPort"
-   $portNum = _getProperty($configFilePath , $identifier, $toGet)	  
-   
+	$toGet = "VLAN_Switch_Port"
+	$portNum = _getProperty($configFilePath , $identifier, $toGet)	  
+	If StringInStr($portNum, "Error") Then
+	  _logErr ($portNum) 
+	EndIf
+	If StringInStr($portNum, "NA") Then
+	  _logErr ("VN Port number is NA in config file") 
+	EndIf
+	
    ;getting the switch IP address
-   $toGet = "switchIP"
-   $switchIP = _getProperty($configFilePath , $identifier, $toGet)	  
-   ;$portNum = 3
+	$toGet = "VLAN_Switch_IP"
+	$switchIP = _getProperty($configFilePath , $identifier, $toGet)	  
+	If StringInStr($switchIP, "Error") Then
+	  _logErr ($switchIP) 
+	EndIf
 
    ;getting the switch password
-   $toGet = "switchPw"
-   $switchPw = _getProperty($configFilePath , $identifier, $toGet)	  
- 
+	$toGet = "VLAN_Switch_Pw"
+	$switchPw = _getProperty($configFilePath , $identifier, $toGet)	  
+ 	If StringInStr($switchPw, "Error") Then
+	  _logErr ($switchPw) 
+	EndIf
+	
    ;getting the switch en_password
-   $toGet = "switchEnPw"
-   $switchEnPw = _getProperty($configFilePath , $identifier, $toGet)	  
-   
+	$toGet = "VLAN_Switch_2ndPw"
+	$switchEnPw = _getProperty($configFilePath , $identifier, $toGet)	  
+  	If StringInStr($switchEnPw, "Error") Then
+	  _logErr ($switchEnPw) 
+	EndIf  
+
    _logRunningStat ("FINISHED Parsing information from iSCT.conf")
-   _logRunningStat ("lanPort: " & $portNum )
-   _logRunningStat ("switchIP: " & $switchIP)
-   _logRunningStat ("switchPw: " & $switchPw)
-   _logRunningStat ("switchEnPw: " & $switchEnPw)
+   _logRunningStat ("VLAN_Switch_Port: " & $portNum )
+   _logRunningStat ("VLAN_Switch_IP: " & $switchIP)
+   _logRunningStat ("VLAN_Switch_Pw: " & $switchPw)
+   _logRunningStat ("VLAN_Switch_2ndPw: " & $switchEnPw)
    
    
    $killPutty = "C:\WINDOWS\system32\windowspowershell\v1.0\powershell.exe Stop-Process -processname putty"
@@ -548,13 +576,32 @@ Func _printUsage()
  
  ; check if this AP has DD-WRT
 Func _checkDDWRT ()
-   Local $sSrc = _IEDocReadHTML($oIE)
-   sleep(2000)
-   Local $errOnPage = StringRegExp($sSrc, '.*Internet Explorer cannot display the webpage*', 0)
-   
-   If $errOnPage  = 1 Then
-	  _logErr ("[Checking DD-WRT] : Cannot go to the AP's website")
-   EndIf 
+	Local $loop = 0
+	For $i = 1 To 5 Step 1
+		Local $sSrc = _IEDocReadHTML($oIE)
+		sleep(2000)
+		Local $errOnPage = StringRegExp($sSrc, '.*Internet Explorer cannot display the webpage*', 0)
+		If $errOnPage  = 0 Then
+			ExitLoop	
+		EndIf
+		$loop = $loop + 1
+		_logRunningStat("[Checking DD-WRT] : Cannot go to the AP's website. Tried " & $loop & " times.")
+		;nagvigate to this website again
+		$address = "http://" & $ipAddress
+		_IENavigate($oIE, $address)
+		_logRunningStat ("Navigating to URL address : " & $address)
+		ConsoleWrite("Navigating to URL address : " & $address & @LF)
+		_IELoadWait ($oIE)
+		If @error <> 0 Then 
+			_logErr(@error)
+		Endif	
+	Next
+	
+	If $loop  >= 5 Then
+		_logErr ("[Checking DD-WRT] : Cannot go to the AP's website. Tried (max)" & $loop & " times.")
+		ConsoleWrite ("[Checking DD-WRT] : Cannot go to the AP's website. Tried (max)" & $loop & " times." & @LF)
+		_logRunningStat("[Return Status] : Failed " & $loop & " times.")
+	EndIf 
    
    Local $aMatch = StringRegExp($sSrc, '.*DD-WRT*', 0)
    
