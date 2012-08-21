@@ -287,18 +287,18 @@ Func _WiFi_Handler()
 		_logRunningStat ("Re-booting the AP.......................")
 		$plinkCommand = $plinkPath & ' ' & _RTRIM($ipAddress, $string2) & ' ' & "-l" & ' ' &  _RTRIM($dd_wrt_userName, $string2) & ' ' & "-pw" & ' ' &  _RTRIM($dd_wrt_password, $string2) &  " reboot"
 		$process_id_reboot = Run($plinkCommand , @SystemDir, @SW_HIDE, $STDERR_CHILD + $STDOUT_CHILD)
-		_logRunningStat ("Sleeping for 60 seconds ")
-		Sleep (60000)
-	  EndIf
 		_logRunningStat ("Sleeping for 30 seconds ")
+		Sleep (90000)
+	  EndIf
 		Sleep(30000)
+		#cs
 	  _logRunningStat ("Checking if the SSID is turned " & $opt)
 	  $checkReturn = _checkSSID($SSID , $opt)
 	  If $checkReturn = 1 Then
 		 $ret = "Failed"
 		 _logRunningStat ("Failed to turn " & $opt & " the wifi interface " & $dd_wrt_RF_Name & " of SSID " & $SSID )
 	  EndIf
-	  
+	  #ce
    EndIf
    
    ;=================================== if this AP is not DD WRT supported============================
