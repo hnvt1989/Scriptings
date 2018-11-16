@@ -1,4 +1,1 @@
-ISCT-Scripts
-============
-
-ISCT Automation Scripts
+## Scripts to make life easier !
